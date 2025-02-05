@@ -23,7 +23,7 @@ type APIResponse struct {
 					Prefix string `json:"prefix"`
 					Regex  string `json:"regex"`
 				} `json:"path"`
-				Headers []struct { // <-- Added Header Match Conditions
+				Headers []struct {
 					Name  string `json:"name"`
 					Regex string `json:"regex,omitempty"`
 				} `json:"headers,omitempty"`
@@ -32,12 +32,18 @@ type APIResponse struct {
 						Name string `json:"name"`
 					} `json:"pool"`
 				} `json:"origin_pools"`
-			} `json:"simple_route"`
+				AdvancedOptions *struct {
+					AppFirewall *struct {
+						Name string `json:"name"`
+					} `json:"app_firewall,omitempty"`
+					InheritedWAF *struct{} `json:"inherited_waf,omitempty"`
+				} `json:"advanced_options,omitempty"`
+			} `json:"simple_route,omitempty"`
 			RedirectRoute *struct {
 				Path struct {
 					Prefix string `json:"prefix"`
 				} `json:"path"`
-				Headers []struct { // <-- Add Headers for RedirectRoute
+				Headers []struct {
 					Name  string `json:"name"`
 					Regex string `json:"regex,omitempty"`
 				} `json:"headers,omitempty"`
@@ -45,7 +51,7 @@ type APIResponse struct {
 					HostRedirect string `json:"host_redirect"`
 					PathRedirect string `json:"path_redirect"`
 				} `json:"route_redirect"`
-			} `json:"redirect_route"`
+			} `json:"redirect_route,omitempty"`
 		} `json:"routes"`
 		Domains []string `json:"domains"`
 	} `json:"spec"`
@@ -204,6 +210,8 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	}
 
 	var sb strings.Builder
+	wafAdded := make(map[string]bool)         // Track added WAF nodes
+	poolToUpstream := make(map[string]string) // Track single upstream connection for each pool
 
 	sb.WriteString("\nMermaid Diagram:\n```mermaid\n")
 	sb.WriteString("graph LR;\n")
@@ -215,15 +223,19 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 		sb.WriteString(fmt.Sprintf("    %s --> ServicePolicies;\n", domain))
 	}
 
-	wafNode := wafName
+	wafNode := fmt.Sprintf("waf_%s[\"WAF: %s\"]", wafName, wafName)
 	sb.WriteString(fmt.Sprintf("    ServicePolicies -->|Processes WAF| %s;\n", wafNode))
 	sb.WriteString(fmt.Sprintf("    %s -->|Routes Evaluated| Routes;\n", wafNode))
 
 	for i, route := range apiResponse.Spec.Routes {
 		var matchConditions []string
+		var routeWAF string // Store route-specific WAF
 
 		// Process SimpleRoute
 		if route.SimpleRoute != nil {
+			// Add Route Header
+			matchConditions = append(matchConditions, "**Route**")
+
 			// Add Path Match Condition
 			if route.SimpleRoute.Path.Prefix != "" {
 				matchConditions = append(matchConditions, fmt.Sprintf("Path: %s", route.SimpleRoute.Path.Prefix))
@@ -240,24 +252,55 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 				}
 			}
 
+			// Check if WAF is explicitly defined (not inherited)
+			if route.SimpleRoute.AdvancedOptions != nil && route.SimpleRoute.AdvancedOptions.AppFirewall != nil {
+				routeWAF = route.SimpleRoute.AdvancedOptions.AppFirewall.Name
+			}
+
 			// Combine Match Conditions
-			matchLabel := strings.Join(matchConditions, " & ")
-			matchLabel = fmt.Sprintf("\"%s\"", matchLabel) // Wrap in double quotes
-
+			matchLabel := strings.Join(matchConditions, " <BR> ")
 			nodeID := fmt.Sprintf("route_%d", i)
-			sb.WriteString(fmt.Sprintf("    Routes -->|%s| %s;\n", matchLabel, nodeID))
 
-			for _, pool := range route.SimpleRoute.OriginPools {
-				poolID := fmt.Sprintf("pool_%s", pool.Pool.Name)
-				sb.WriteString(fmt.Sprintf("    %s --> %s;\n", nodeID, poolID))
+			// Route node with conditions inside
+			sb.WriteString(fmt.Sprintf("    %s[\"%s\"];\n", nodeID, matchLabel))
+			sb.WriteString(fmt.Sprintf("    Routes --> %s;\n", nodeID))
 
-				origins, err := queryOriginPool(apiURL, token, namespace, pool.Pool.Name, debug)
-				if err != nil {
-					sb.WriteString(fmt.Sprintf("    // Error fetching origins for %s: %v\n", pool.Pool.Name, err))
-					continue
+			// If WAF is applied, create a WAF node and connect it
+			if routeWAF != "" {
+				wafNodeID := fmt.Sprintf("waf_%s", routeWAF)
+				if !wafAdded[wafNodeID] {
+					sb.WriteString(fmt.Sprintf("    %s[\"**WAF**: %s\"];\n", wafNodeID, routeWAF))
+					wafAdded[wafNodeID] = true
 				}
-				for _, origin := range origins {
-					sb.WriteString(fmt.Sprintf("    %s --> %s;\n", poolID, origin))
+				// Route flows to WAF first
+				sb.WriteString(fmt.Sprintf("    %s --> %s;\n", nodeID, wafNodeID))
+			}
+
+			// Process Origin Pools
+			for _, pool := range route.SimpleRoute.OriginPools {
+				poolID := fmt.Sprintf("pool_%s[\"**Pool**<br> %s\"]", pool.Pool.Name, pool.Pool.Name)
+
+				// If WAF exists, flow from WAF to Origin Pool
+				if routeWAF != "" {
+					wafNodeID := fmt.Sprintf("waf_%s", routeWAF)
+					sb.WriteString(fmt.Sprintf("    %s --> %s;\n", wafNodeID, poolID))
+				} else {
+					// No WAF, flow directly from route to pool
+					sb.WriteString(fmt.Sprintf("    %s --> %s;\n", nodeID, poolID))
+				}
+
+				// Fetch and add origins under each pool, but ensure **only one connection** per pool
+				if _, exists := poolToUpstream[pool.Pool.Name]; !exists {
+					origins, err := queryOriginPool(apiURL, token, namespace, pool.Pool.Name, debug)
+					if err != nil {
+						sb.WriteString(fmt.Sprintf("    // Error fetching origins for %s: %v\n", pool.Pool.Name, err))
+						continue
+					}
+					if len(origins) > 0 {
+						upstream := origins[0] // Pick first upstream to avoid multiple links
+						sb.WriteString(fmt.Sprintf("    %s --> %s;\n", poolID, upstream))
+						poolToUpstream[pool.Pool.Name] = upstream // Mark it processed
+					}
 				}
 			}
 		}
@@ -265,6 +308,9 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 		// Process RedirectRoute
 		if route.RedirectRoute != nil {
 			redirectID := fmt.Sprintf("redirect_%d", i)
+
+			// Add Route Header
+			matchConditions = append(matchConditions, "**Route**")
 
 			// Add Path Match Condition
 			if route.RedirectRoute.Path.Prefix != "" {
@@ -281,10 +327,9 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 			}
 
 			// Combine Match Conditions
-			matchLabel := strings.Join(matchConditions, " & ")
-			matchLabel = fmt.Sprintf("\"%s\"", matchLabel) // Wrap in double quotes
-
-			sb.WriteString(fmt.Sprintf("    Routes -->|%s| %s;\n", matchLabel, redirectID))
+			matchLabel := strings.Join(matchConditions, " <BR> ")
+			sb.WriteString(fmt.Sprintf("    %s[\"%s\"];\n", redirectID, matchLabel))
+			sb.WriteString(fmt.Sprintf("    Routes --> %s;\n", redirectID))
 			sb.WriteString(fmt.Sprintf("    %s -->|Redirects to| %s;\n", redirectID, route.RedirectRoute.RouteRedirect.HostRedirect))
 		}
 	}
