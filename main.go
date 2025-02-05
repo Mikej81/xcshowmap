@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -76,9 +75,24 @@ type APIResponse struct {
 // OriginPoolResponse represents the API response structure for querying an origin pool
 type OriginPoolResponse struct {
 	Spec struct {
-		Origins []struct {
-			Name string `json:"name"`
-		} `json:"origins"`
+		OriginServers []struct {
+			PrivateIP struct {
+				IP          string `json:"ip"`
+				SiteLocator struct {
+					Site struct {
+						Name string `json:"name"`
+					} `json:"site"`
+				} `json:"site_locator"`
+			} `json:"private_ip,omitempty"`
+
+			PublicIP struct {
+				IP string `json:"ip"`
+			} `json:"public_ip,omitempty"`
+
+			PublicName struct {
+				DNSName string `json:"dns_name"`
+			} `json:"public_name,omitempty"`
+		} `json:"origin_servers"`
 	} `json:"spec"`
 }
 
@@ -170,48 +184,47 @@ func queryOriginPool(apiURL, token, namespace, poolName string, debug bool) ([]s
 	var response struct {
 		Spec struct {
 			OriginServers []struct {
+				PrivateIP struct {
+					IP          string `json:"ip"`
+					SiteLocator struct {
+						Site struct {
+							Name string `json:"name"`
+						} `json:"site"`
+					} `json:"site_locator,omitempty"`
+				} `json:"private_ip,omitempty"`
 				PublicIP struct {
 					IP string `json:"ip"`
-				} `json:"public_ip"`
+				} `json:"public_ip,omitempty"`
 				PublicName struct {
 					DNSName string `json:"dns_name"`
-				} `json:"public_name"`
-				PrivateIP struct {
-					IP string `json:"ip"`
-				} `json:"private_ip"`
-				PrivateName struct {
-					DNSName string `json:"dns_name"`
-				} `json:"private_name"`
-				K8sService struct {
-					ServiceName string `json:"service_name"`
-				} `json:"k8s_service"`
-				ConsulService struct {
-					ServiceName string `json:"service_name"`
-				} `json:"consul_service"`
+				} `json:"public_name,omitempty"`
 			} `json:"origin_servers"`
 		} `json:"spec"`
 	}
 
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	if err := decoder.Decode(&response); err != nil {
+	err = json.Unmarshal(data, &response)
+	if err != nil {
 		return nil, err
 	}
 
 	var origins []string
 	for _, server := range response.Spec.OriginServers {
-		switch {
-		case server.PublicIP.IP != "":
-			origins = append(origins, server.PublicIP.IP)
-		case server.PublicName.DNSName != "":
-			origins = append(origins, server.PublicName.DNSName)
-		case server.PrivateIP.IP != "":
-			origins = append(origins, server.PrivateIP.IP)
-		case server.PrivateName.DNSName != "":
-			origins = append(origins, server.PrivateName.DNSName)
-		case server.K8sService.ServiceName != "":
-			origins = append(origins, server.K8sService.ServiceName)
-		case server.ConsulService.ServiceName != "":
-			origins = append(origins, server.ConsulService.ServiceName)
+		var originLabel string
+
+		// Prefer Private IP with Site Name
+		if server.PrivateIP.IP != "" {
+			originLabel = server.PrivateIP.IP
+			if server.PrivateIP.SiteLocator.Site.Name != "" {
+				originLabel += "<br>" + server.PrivateIP.SiteLocator.Site.Name
+			}
+		} else if server.PublicIP.IP != "" {
+			originLabel = server.PublicIP.IP
+		} else if server.PublicName.DNSName != "" {
+			originLabel = server.PublicName.DNSName
+		}
+
+		if originLabel != "" {
+			origins = append(origins, fmt.Sprintf("\"%s\"", originLabel)) // Format for Mermaid
 		}
 	}
 
@@ -236,6 +249,7 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	var sb strings.Builder
 	wafAdded := make(map[string]bool)
 	poolToUpstream := make(map[string]string)
+	nodeCount := 0 // Counter for unique node numbering
 
 	sb.WriteString("\nMermaid Diagram:\n```mermaid\n")
 	sb.WriteString("---\n")
@@ -271,14 +285,18 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	sb.WriteString("    DefaultRoute[\"**Default Route**\"];\n")
 	sb.WriteString("    Routes --> DefaultRoute;\n")
 	for _, pool := range apiResponse.Spec.DefaultRoutePools {
-		poolID := fmt.Sprintf("pool_%s[\"**Pool**<br> %s\"]", pool.Pool.Name, pool.Pool.Name)
+		poolID := fmt.Sprintf("pool_%s[\"**Pool**<br>%s\"]", pool.Pool.Name, pool.Pool.Name)
 		sb.WriteString(fmt.Sprintf("    DefaultRoute --> %s;\n", poolID))
+
 		if _, exists := poolToUpstream[pool.Pool.Name]; !exists {
 			origins, err := queryOriginPool(apiURL, token, namespace, pool.Pool.Name, debug)
 			if err == nil && len(origins) > 0 {
-				upstream := origins[0]
-				sb.WriteString(fmt.Sprintf("    %s --> %s;\n", poolID, upstream))
-				poolToUpstream[pool.Pool.Name] = upstream
+				for _, origin := range origins {
+					nodeCount++
+					originNode := fmt.Sprintf("node_%d[\"%s\"]", nodeCount, origin)
+					sb.WriteString(fmt.Sprintf("    %s --> %s;\n", poolID, originNode))
+				}
+				poolToUpstream[pool.Pool.Name] = origins[0]
 			}
 		}
 	}
@@ -289,7 +307,6 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 		var routeWAF string
 
 		if route.SimpleRoute != nil {
-			// Process SimpleRoute
 			matchConditions = append(matchConditions, "**Route**")
 			if route.SimpleRoute.Path.Prefix != "" {
 				matchConditions = append(matchConditions, fmt.Sprintf("Path: %s", route.SimpleRoute.Path.Prefix))
@@ -321,46 +338,28 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 					wafAdded[wafNodeID] = true
 				}
 				sb.WriteString(fmt.Sprintf("    %s --> %s;\n", nodeID, wafNodeID))
+			}
 
-				// Connect WAF to Origin Pools
-				for _, pool := range route.SimpleRoute.OriginPools {
-					poolID := fmt.Sprintf("pool_%s[\"**Pool**<br> %s\"]", pool.Pool.Name, pool.Pool.Name)
-					sb.WriteString(fmt.Sprintf("    %s --> %s;\n", wafNodeID, poolID))
-					if _, exists := poolToUpstream[pool.Pool.Name]; !exists {
-						origins, err := queryOriginPool(apiURL, token, namespace, pool.Pool.Name, debug)
-						if err == nil && len(origins) > 0 {
-							upstream := origins[0]
-							sb.WriteString(fmt.Sprintf("    %s --> %s;\n", poolID, upstream))
-							poolToUpstream[pool.Pool.Name] = upstream
+			// Process Origin Pools
+			for _, pool := range route.SimpleRoute.OriginPools {
+				poolID := fmt.Sprintf("pool_%s[\"**Pool**<br>%s\"]", pool.Pool.Name, pool.Pool.Name)
+				sb.WriteString(fmt.Sprintf("    %s --> %s;\n", nodeID, poolID))
+
+				if _, exists := poolToUpstream[pool.Pool.Name]; !exists {
+					origins, err := queryOriginPool(apiURL, token, namespace, pool.Pool.Name, debug)
+					if err == nil && len(origins) > 0 {
+						for _, origin := range origins {
+							nodeCount++
+							originNode := fmt.Sprintf("node_%d[\"%s\"]", nodeCount, origin)
+							sb.WriteString(fmt.Sprintf("    %s --> %s;\n", poolID, originNode))
 						}
-					}
-				}
-			} else {
-				// Directly connect to Origin Pools
-				for _, pool := range route.SimpleRoute.OriginPools {
-					poolID := fmt.Sprintf("pool_%s[\"**Pool**<br> %s\"]", pool.Pool.Name, pool.Pool.Name)
-					sb.WriteString(fmt.Sprintf("    %s --> %s;\n", nodeID, poolID))
-					if _, exists := poolToUpstream[pool.Pool.Name]; !exists {
-						origins, err := queryOriginPool(apiURL, token, namespace, pool.Pool.Name, debug)
-						if err == nil && len(origins) > 0 {
-							upstream := origins[0]
-							sb.WriteString(fmt.Sprintf("    %s --> %s;\n", poolID, upstream))
-							poolToUpstream[pool.Pool.Name] = upstream
-						}
+						poolToUpstream[pool.Pool.Name] = origins[0]
 					}
 				}
 			}
 		}
-
-		// Process RedirectRoute
-		if route.RedirectRoute != nil {
-			redirectID := fmt.Sprintf("redirect_%d", i)
-			redirectLabel := fmt.Sprintf("Redirect: %s --> %s", route.RedirectRoute.RouteRedirect.HostRedirect, route.RedirectRoute.RouteRedirect.PathRedirect)
-			sb.WriteString(fmt.Sprintf("    %s[\"%s\"];\n", redirectID, redirectLabel))
-			sb.WriteString(fmt.Sprintf("    Routes --> %s;\n", redirectID))
-		}
 	}
 
 	sb.WriteString("```\n")
-	fmt.Println(sb.String()) // Print final Mermaid output
+	fmt.Println(sb.String())
 }
