@@ -89,7 +89,5 @@ To visualize the diagram, copy the Mermaid output into an online Mermaid editor 
 
 ### To Do
 
-- add path to redirect route display
-- add service policy enumeration
 - add additional security services
 - evaluate CDN existence / match upstream domain
