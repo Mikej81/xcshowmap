@@ -80,12 +80,12 @@ To visualize the diagram, copy the Mermaid output into an online Mermaid editor 
 
 ### Features
 
-✅ Generates Service Flow from F5 XC API
-✅ Queries Load Balancer & Origin Pools
-✅ Displays WAF & Service Policies in Diagram
-✅ Supports Regex & Prefix-based Routes
-✅ Shows User Flow & Domains in Diagram
-✅ Debug Mode for Raw API Output
+- ✅ Generates Service Flow from F5 XC API
+- ✅ Queries Load Balancer & Origin Pools
+- ✅ Displays WAF & Service Policies in Diagram
+- ✅ Supports Regex & Prefix-based Routes
+- ✅ Shows User Flow & Domains in Diagram
+- ✅ Debug Mode for Raw API Output
 
 ### To Do
 
