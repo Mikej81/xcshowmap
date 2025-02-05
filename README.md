@@ -66,7 +66,7 @@ graph LR;
     LoadBalancer -->|dummy.myedgedemo.com| dummy.myedgedemo.com;
     dummy-f5sa.myedgedemo.com --> ServicePolicies;
     LoadBalancer -->|dummy.myedgedemo.com| dummy.myedgedemo.com;
-    f5-dummy.myedgedemo.com --> ServicePolicies;
+    dummy.myedgedemo.com --> ServicePolicies;
     ServicePolicies --> demo-waf;
     coleman-demo-waf -->|Routes Evaluated| Routes;
     Routes -->|/api/v1/data| route_1;
