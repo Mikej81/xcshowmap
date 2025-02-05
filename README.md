@@ -86,3 +86,11 @@ To visualize the diagram, copy the Mermaid output into an online Mermaid editor 
 ✅ Supports Regex & Prefix-based Routes
 ✅ Shows User Flow & Domains in Diagram
 ✅ Debug Mode for Raw API Output
+
+### To Do
+
+- add path to redirect route display
+- add service policy enumeration
+- add additional security services
+- evaluate CDN existence / match upstream domain
+- add releases
