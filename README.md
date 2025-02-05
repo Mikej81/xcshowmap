@@ -64,7 +64,7 @@ xcshowmap -api-url "<https://api.f5xc.com>" -token "my_token" -namespace "my-nam
 graph LR;
     User -->|SNI| LoadBalancer;
     LoadBalancer -->|dummy.myedgedemo.com| dummy.myedgedemo.com;
-    dummy-f5sa.myedgedemo.com --> ServicePolicies;
+    dummy.myedgedemo.com --> ServicePolicies;
     LoadBalancer -->|dummy.myedgedemo.com| dummy.myedgedemo.com;
     dummy.myedgedemo.com --> ServicePolicies;
     ServicePolicies --> demo-waf;
