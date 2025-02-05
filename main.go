@@ -23,6 +23,10 @@ type APIResponse struct {
 					Prefix string `json:"prefix"`
 					Regex  string `json:"regex"`
 				} `json:"path"`
+				Headers []struct { // <-- Added Header Match Conditions
+					Name  string `json:"name"`
+					Regex string `json:"regex,omitempty"`
+				} `json:"headers,omitempty"`
 				OriginPools []struct {
 					Pool struct {
 						Name string `json:"name"`
@@ -33,13 +37,17 @@ type APIResponse struct {
 				Path struct {
 					Prefix string `json:"prefix"`
 				} `json:"path"`
+				Headers []struct { // <-- Add Headers for RedirectRoute
+					Name  string `json:"name"`
+					Regex string `json:"regex,omitempty"`
+				} `json:"headers,omitempty"`
 				RouteRedirect struct {
 					HostRedirect string `json:"host_redirect"`
 					PathRedirect string `json:"path_redirect"`
 				} `json:"route_redirect"`
 			} `json:"redirect_route"`
 		} `json:"routes"`
-		Domains []string `json:"domains"` // <-- ADD THIS LINE
+		Domains []string `json:"domains"`
 	} `json:"spec"`
 }
 
@@ -212,19 +220,32 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	sb.WriteString(fmt.Sprintf("    %s -->|Routes Evaluated| Routes;\n", wafNode))
 
 	for i, route := range apiResponse.Spec.Routes {
+		var matchConditions []string
+
+		// Process SimpleRoute
 		if route.SimpleRoute != nil {
-			var path string
-			switch {
-			case route.SimpleRoute.Path.Prefix != "":
-				path = route.SimpleRoute.Path.Prefix
-			case route.SimpleRoute.Path.Regex != "":
-				path = fmt.Sprintf("\"Regex: %s\"", route.SimpleRoute.Path.Regex)
-			default:
-				path = "Unknown Route"
+			// Add Path Match Condition
+			if route.SimpleRoute.Path.Prefix != "" {
+				matchConditions = append(matchConditions, fmt.Sprintf("Path: %s", route.SimpleRoute.Path.Prefix))
+			} else if route.SimpleRoute.Path.Regex != "" {
+				matchConditions = append(matchConditions, fmt.Sprintf("Regex: %s", route.SimpleRoute.Path.Regex))
 			}
 
+			// Add Header Match Conditions
+			for _, header := range route.SimpleRoute.Headers {
+				if header.Regex != "" {
+					matchConditions = append(matchConditions, fmt.Sprintf("Header: %s ~ %s", header.Name, header.Regex))
+				} else {
+					matchConditions = append(matchConditions, fmt.Sprintf("Header: %s", header.Name))
+				}
+			}
+
+			// Combine Match Conditions
+			matchLabel := strings.Join(matchConditions, " & ")
+			matchLabel = fmt.Sprintf("\"%s\"", matchLabel) // Wrap in double quotes
+
 			nodeID := fmt.Sprintf("route_%d", i)
-			sb.WriteString(fmt.Sprintf("    Routes -->|%s| %s;\n", path, nodeID))
+			sb.WriteString(fmt.Sprintf("    Routes -->|%s| %s;\n", matchLabel, nodeID))
 
 			for _, pool := range route.SimpleRoute.OriginPools {
 				poolID := fmt.Sprintf("pool_%s", pool.Pool.Name)
@@ -240,9 +261,30 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 				}
 			}
 		}
+
+		// Process RedirectRoute
 		if route.RedirectRoute != nil {
 			redirectID := fmt.Sprintf("redirect_%d", i)
-			sb.WriteString(fmt.Sprintf("    Routes -->|Redirect: %s| %s;\n", route.RedirectRoute.Path.Prefix, redirectID))
+
+			// Add Path Match Condition
+			if route.RedirectRoute.Path.Prefix != "" {
+				matchConditions = append(matchConditions, fmt.Sprintf("Path: %s", route.RedirectRoute.Path.Prefix))
+			}
+
+			// Add Header Match Conditions
+			for _, header := range route.RedirectRoute.Headers {
+				if header.Regex != "" {
+					matchConditions = append(matchConditions, fmt.Sprintf("Header: %s ~ %s", header.Name, header.Regex))
+				} else {
+					matchConditions = append(matchConditions, fmt.Sprintf("Header: %s", header.Name))
+				}
+			}
+
+			// Combine Match Conditions
+			matchLabel := strings.Join(matchConditions, " & ")
+			matchLabel = fmt.Sprintf("\"%s\"", matchLabel) // Wrap in double quotes
+
+			sb.WriteString(fmt.Sprintf("    Routes -->|%s| %s;\n", matchLabel, redirectID))
 			sb.WriteString(fmt.Sprintf("    %s -->|Redirects to| %s;\n", redirectID, route.RedirectRoute.RouteRedirect.HostRedirect))
 		}
 	}
