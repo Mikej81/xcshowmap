@@ -219,13 +219,15 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 
 	// Display each domain as a node connected to the Load Balancer
 	for _, domain := range apiResponse.Spec.Domains {
-		sb.WriteString(fmt.Sprintf("    LoadBalancer -->|%s| %s;\n", domain, domain))
+		sb.WriteString(fmt.Sprintf("    LoadBalancer --> %s;\n", domain))
 		sb.WriteString(fmt.Sprintf("    %s --> ServicePolicies;\n", domain))
 	}
 
 	wafNode := fmt.Sprintf("waf_%s[\"WAF: %s\"]", wafName, wafName)
-	sb.WriteString(fmt.Sprintf("    ServicePolicies -->|Processes WAF| %s;\n", wafNode))
-	sb.WriteString(fmt.Sprintf("    %s -->|Routes Evaluated| Routes;\n", wafNode))
+	sb.WriteString(fmt.Sprintf("    ServicePolicies -->|Process WAF| %s;\n", wafNode))
+	//sb.WriteString(fmt.Sprintf("    %s -->|Routes Evaluated| Routes;\n", wafNode))
+	sb.WriteString(fmt.Sprintf("    %s --> Routes;\n", wafNode))
+	sb.WriteString("    Routes[\"**Routes**\"];\n")
 
 	for i, route := range apiResponse.Spec.Routes {
 		var matchConditions []string
