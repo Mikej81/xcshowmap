@@ -65,6 +65,8 @@ type APIResponse struct {
 		} `json:"routes"`
 		Domains []string `json:"domains"`
 
+		APIProtection map[string]interface{} `json:"api_protection_rules,omitempty"`
+
 		DisabledBotDefense map[string]interface{} `json:"disable_bot_defense,omitempty"`
 		EnabledBotDefense  map[string]interface{} `json:"bot_defense,omitempty"`
 
@@ -277,6 +279,13 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	sb.WriteString("    end\n")
 	sb.WriteString("    ServicePolicies --> info_ServicePolicies;\n")
 
+	// **API Protection Logic**
+	apiProtectionNode := ""
+	if apiResponse.Spec.APIProtection != nil {
+		apiProtectionNode = "api_protection[\"**API Protection Enabled**\"]"
+		sb.WriteString(fmt.Sprintf("    ServicePolicies --> %s;\n", apiProtectionNode))
+	}
+
 	// **Bot Defense Logic**
 	botDefenseNode := ""
 	if apiResponse.Spec.EnabledBotDefense != nil {
@@ -285,14 +294,21 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 		botDefenseNode = "bot_defense[\"**Automated Fraud Disabled**\"]"
 	}
 
-	if botDefenseNode != "" {
+	// Link API Protection → Bot Defense (if both exist)
+	if apiProtectionNode != "" && botDefenseNode != "" {
+		sb.WriteString(fmt.Sprintf("    %s --> %s;\n", apiProtectionNode, botDefenseNode))
+	} else if botDefenseNode != "" {
 		sb.WriteString(fmt.Sprintf("    ServicePolicies --> %s;\n", botDefenseNode))
 	}
 
 	// Define WAF node
 	wafNode := fmt.Sprintf("waf_%s[\"WAF: %s\"]", wafName, wafName)
+
+	// Link Bot Defense → WAF
 	if botDefenseNode != "" {
 		sb.WriteString(fmt.Sprintf("    %s --> %s;\n", botDefenseNode, wafNode))
+	} else if apiProtectionNode != "" {
+		sb.WriteString(fmt.Sprintf("    %s --> %s;\n", apiProtectionNode, wafNode))
 	} else {
 		sb.WriteString(fmt.Sprintf("    ServicePolicies -->|Process WAF| %s;\n", wafNode))
 	}
@@ -362,7 +378,14 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 			// Process Origin Pools
 			for _, pool := range route.SimpleRoute.OriginPools {
 				poolID := fmt.Sprintf("pool_%s[\"**Pool**<br>%s\"]", pool.Pool.Name, pool.Pool.Name)
-				sb.WriteString(fmt.Sprintf("    %s --> %s;\n", nodeID, poolID))
+				if routeWAF != "" {
+					// Ensure the WAF connects to the pool instead of the route directly
+					wafNodeID := fmt.Sprintf("waf_%s", routeWAF)
+					sb.WriteString(fmt.Sprintf("    %s --> %s;\n", wafNodeID, poolID))
+				} else {
+					// No WAF, so Route connects directly to Pool
+					sb.WriteString(fmt.Sprintf("    %s --> %s;\n", nodeID, poolID))
+				}
 
 				if _, exists := poolToUpstream[pool.Pool.Name]; !exists {
 					origins, err := queryOriginPool(apiURL, token, namespace, pool.Pool.Name, debug)
