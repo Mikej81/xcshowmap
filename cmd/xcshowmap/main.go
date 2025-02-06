@@ -65,7 +65,9 @@ type APIResponse struct {
 		} `json:"routes"`
 		Domains []string `json:"domains"`
 
-		// New Fields for Load Balancer Type
+		DisabledBotDefense map[string]interface{} `json:"disable_bot_defense,omitempty"`
+		EnabledBotDefense  map[string]interface{} `json:"bot_defense,omitempty"`
+
 		AdvertiseOnPublicDefaultVIP map[string]interface{} `json:"advertise_on_public_default_vip,omitempty"`
 		AdvertiseOnPublic           map[string]interface{} `json:"advertise_on_public,omitempty"`
 		AdvertiseOnCustom           map[string]interface{} `json:"advertise_on_custom,omitempty"`
@@ -275,9 +277,26 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	sb.WriteString("    end\n")
 	sb.WriteString("    ServicePolicies --> info_ServicePolicies;\n")
 
+	// **Bot Defense Logic**
+	botDefenseNode := ""
+	if apiResponse.Spec.EnabledBotDefense != nil {
+		botDefenseNode = "bot_defense[\"**Automated Fraud Enabled**\"]"
+	} else if apiResponse.Spec.DisabledBotDefense != nil {
+		botDefenseNode = "bot_defense[\"**Automated Fraud Disabled**\"]"
+	}
+
+	if botDefenseNode != "" {
+		sb.WriteString(fmt.Sprintf("    ServicePolicies --> %s;\n", botDefenseNode))
+	}
+
 	// Define WAF node
 	wafNode := fmt.Sprintf("waf_%s[\"WAF: %s\"]", wafName, wafName)
-	sb.WriteString(fmt.Sprintf("    ServicePolicies -->|Process WAF| %s;\n", wafNode))
+	if botDefenseNode != "" {
+		sb.WriteString(fmt.Sprintf("    %s --> %s;\n", botDefenseNode, wafNode))
+	} else {
+		sb.WriteString(fmt.Sprintf("    ServicePolicies -->|Process WAF| %s;\n", wafNode))
+	}
+
 	sb.WriteString(fmt.Sprintf("    %s --> Routes;\n", wafNode))
 	sb.WriteString("    Routes[\"**Routes**\"];\n")
 
