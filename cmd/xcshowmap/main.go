@@ -11,6 +11,71 @@ import (
 )
 
 // APIResponse represents the JSON structure of the Load Balancer API response
+// type APIResponse struct {
+// 	Spec struct {
+// 		AppFirewall struct {
+// 			Name string `json:"name"`
+// 		} `json:"app_firewall"`
+// 		DefaultRoutePools []struct {
+// 			Pool struct {
+// 				Name string `json:"name"`
+// 			} `json:"pool"`
+// 		} `json:"default_route_pools"`
+// 		ActiveServicePolicies struct {
+// 			Policies []struct {
+// 				Namespace string `json:"namespace"`
+// 				Name      string `json:"name"`
+// 			} `json:"policies"`
+// 		} `json:"active_service_policies"`
+// 		Routes []struct {
+// 			SimpleRoute *struct {
+// 				Path struct {
+// 					Prefix string `json:"prefix"`
+// 					Regex  string `json:"regex"`
+// 				} `json:"path"`
+// 				Headers []struct {
+// 					Name  string `json:"name"`
+// 					Regex string `json:"regex,omitempty"`
+// 				} `json:"headers,omitempty"`
+// 				OriginPools []struct {
+// 					Pool struct {
+// 						Name string `json:"name"`
+// 					} `json:"pool"`
+// 				} `json:"origin_pools"`
+// 				AdvancedOptions *struct {
+// 					AppFirewall *struct {
+// 						Name string `json:"name"`
+// 					} `json:"app_firewall,omitempty"`
+// 					InheritedWAF *struct{} `json:"inherited_waf,omitempty"`
+// 				} `json:"advanced_options,omitempty"`
+// 			} `json:"simple_route,omitempty"`
+// 			RedirectRoute *struct {
+// 				Path struct {
+// 					Prefix string `json:"prefix"`
+// 				} `json:"path"`
+// 				Headers []struct {
+// 					Name  string `json:"name"`
+// 					Regex string `json:"regex,omitempty"`
+// 				} `json:"headers,omitempty"`
+// 				RouteRedirect struct {
+// 					HostRedirect string `json:"host_redirect"`
+// 					PathRedirect string `json:"path_redirect"`
+// 				} `json:"route_redirect"`
+// 			} `json:"redirect_route,omitempty"`
+// 		} `json:"routes"`
+// 		Domains []string `json:"domains"`
+
+// 		APIProtection map[string]interface{} `json:"api_protection_rules,omitempty"`
+
+// 		DisabledBotDefense map[string]interface{} `json:"disable_bot_defense,omitempty"`
+// 		EnabledBotDefense  map[string]interface{} `json:"bot_defense,omitempty"`
+
+// 		AdvertiseOnPublicDefaultVIP map[string]interface{} `json:"advertise_on_public_default_vip,omitempty"`
+// 		AdvertiseOnPublic           map[string]interface{} `json:"advertise_on_public,omitempty"`
+// 		AdvertiseOnCustom           map[string]interface{} `json:"advertise_on_custom,omitempty"`
+// 	} `json:"spec"`
+// }
+
 type APIResponse struct {
 	Spec struct {
 		AppFirewall struct {
@@ -73,6 +138,10 @@ type APIResponse struct {
 		AdvertiseOnPublicDefaultVIP map[string]interface{} `json:"advertise_on_public_default_vip,omitempty"`
 		AdvertiseOnPublic           map[string]interface{} `json:"advertise_on_public,omitempty"`
 		AdvertiseOnCustom           map[string]interface{} `json:"advertise_on_custom,omitempty"`
+
+		// New Fields
+		CertExpirationTimestamps []string `json:"downstream_tls_certificate_expiration_timestamps"`
+		CertState                string   `json:"cert_state"`
 	} `json:"spec"`
 }
 
@@ -260,24 +329,74 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	sb.WriteString("title: F5 Distributed Cloud Load Balancer Service Flow\n")
 	sb.WriteString("---\n")
 	sb.WriteString("graph LR;\n")
+
+	// Start Load Balancer node
 	sb.WriteString("    User -->|SNI| LoadBalancer;\n")
 	sb.WriteString(fmt.Sprintf("    LoadBalancer[\"**%s**\"];\n", loadBalancerLabel))
 
-	// Display domains connected to Load Balancer
+	// Define Mermaid style for a green box
+	sb.WriteString("    classDef certValid stroke:#01ba44,stroke-width:2px;\n")
+	sb.WriteString("    classDef certWarning stroke:#DAA520,stroke-width:2px;\n")
+	sb.WriteString("    classDef certError stroke:#B22222,stroke-width:2px;\n")
+
+	// Process Domains with Certificate Info
 	for _, domain := range apiResponse.Spec.Domains {
-		sb.WriteString(fmt.Sprintf("    LoadBalancer --> %s;\n", domain))
-		sb.WriteString(fmt.Sprintf("    %s --> ServicePolicies;\n", domain))
+		// Extract Certificate Expiration and State
+		certState := "Unknown"
+		certClass := "" // Default empty class
+		// Set certState based on API response
+		if apiResponse.Spec.CertState == "CertificateValid" {
+			certState = "Valid"
+			certClass = "certValid" // Green box
+		} else if apiResponse.Spec.CertState == "CertificateExpiringSoon" {
+			certState = "Expiring Soon"
+			certClass = "certWarning" // Yellow box
+		} else if apiResponse.Spec.CertState == "CertificateExpired" {
+			certState = "Expired"
+			certClass = "certError" // Red box
+		} else if apiResponse.Spec.CertState != "" {
+			// Catch-all for other certificate states
+			certState = apiResponse.Spec.CertState
+			certClass = "certError" // Default error style for unknown states
+		}
+
+		certExpiration := "Unknown"
+		if len(apiResponse.Spec.CertExpirationTimestamps) > 0 {
+			certExpiration = apiResponse.Spec.CertExpirationTimestamps[0] // Use first timestamp
+		}
+
+		// Attach certificate details to domain node
+		// Format domain node with certificate info
+		domainNodeID := strings.ReplaceAll(domain, ".", "_")
+		domainNode := fmt.Sprintf("domain_%s[\"%s<br> Cert: %s <br> Exp: %s\"]",
+			domainNodeID, domain, certState, certExpiration)
+
+		// Connect domain to Load Balancer
+		sb.WriteString(fmt.Sprintf("    LoadBalancer --> %s;\n", domainNode))
+		// Connect domain to Service Policies
+		sb.WriteString(fmt.Sprintf("    %s --> ServicePolicies;\n", domainNode))
+
+		// Apply the appropriate class for styling
+		if certClass != "" {
+			sb.WriteString(fmt.Sprintf("    class domain_%s %s;\n", domainNodeID, certClass))
+		}
 	}
 
-	// Add Service Policy Information Box
-	sb.WriteString("    subgraph ServicePolicyInfo [\" \"]\n")
+	// Add Service Policies Box
+	sb.WriteString("    subgraph ServicePolicies [\"**Service Policies**\"]\n")
 	sb.WriteString("        direction TB\n")
-	sb.WriteString("        info_ServicePolicies[\"**Service Policies Info**\"];\n")
-	for _, policy := range apiResponse.Spec.ActiveServicePolicies.Policies {
-		sb.WriteString(fmt.Sprintf("        info_ServicePolicies[\"**Service Policies Info**<br> - %s\"];\n", policy.Name))
+
+	// If no service policies exist, add a "No Service Policies Defined" message
+	if len(apiResponse.Spec.ActiveServicePolicies.Policies) == 0 {
+		sb.WriteString("        sp_none[\"No Service Policies Defined\"];\n")
+	} else {
+		// Add each Service Policy as a node under ServicePolicies
+		for _, policy := range apiResponse.Spec.ActiveServicePolicies.Policies {
+			sb.WriteString(fmt.Sprintf("        sp_%s[\"%s\"];\n", policy.Name, policy.Name))
+		}
 	}
+
 	sb.WriteString("    end\n")
-	sb.WriteString("    ServicePolicies --> info_ServicePolicies;\n")
 
 	// **API Protection Logic**
 	apiProtectionNode := ""

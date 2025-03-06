@@ -26,5 +26,6 @@ go.work.sum
 
 .test-crap
 example.json
+example*.json
 builder.sh
 build
