@@ -10,88 +10,27 @@ import (
 	"strings"
 )
 
-// APIResponse represents the JSON structure of the Load Balancer API response
-// type APIResponse struct {
-// 	Spec struct {
-// 		AppFirewall struct {
-// 			Name string `json:"name"`
-// 		} `json:"app_firewall"`
-// 		DefaultRoutePools []struct {
-// 			Pool struct {
-// 				Name string `json:"name"`
-// 			} `json:"pool"`
-// 		} `json:"default_route_pools"`
-// 		ActiveServicePolicies struct {
-// 			Policies []struct {
-// 				Namespace string `json:"namespace"`
-// 				Name      string `json:"name"`
-// 			} `json:"policies"`
-// 		} `json:"active_service_policies"`
-// 		Routes []struct {
-// 			SimpleRoute *struct {
-// 				Path struct {
-// 					Prefix string `json:"prefix"`
-// 					Regex  string `json:"regex"`
-// 				} `json:"path"`
-// 				Headers []struct {
-// 					Name  string `json:"name"`
-// 					Regex string `json:"regex,omitempty"`
-// 				} `json:"headers,omitempty"`
-// 				OriginPools []struct {
-// 					Pool struct {
-// 						Name string `json:"name"`
-// 					} `json:"pool"`
-// 				} `json:"origin_pools"`
-// 				AdvancedOptions *struct {
-// 					AppFirewall *struct {
-// 						Name string `json:"name"`
-// 					} `json:"app_firewall,omitempty"`
-// 					InheritedWAF *struct{} `json:"inherited_waf,omitempty"`
-// 				} `json:"advanced_options,omitempty"`
-// 			} `json:"simple_route,omitempty"`
-// 			RedirectRoute *struct {
-// 				Path struct {
-// 					Prefix string `json:"prefix"`
-// 				} `json:"path"`
-// 				Headers []struct {
-// 					Name  string `json:"name"`
-// 					Regex string `json:"regex,omitempty"`
-// 				} `json:"headers,omitempty"`
-// 				RouteRedirect struct {
-// 					HostRedirect string `json:"host_redirect"`
-// 					PathRedirect string `json:"path_redirect"`
-// 				} `json:"route_redirect"`
-// 			} `json:"redirect_route,omitempty"`
-// 		} `json:"routes"`
-// 		Domains []string `json:"domains"`
-
-// 		APIProtection map[string]interface{} `json:"api_protection_rules,omitempty"`
-
-// 		DisabledBotDefense map[string]interface{} `json:"disable_bot_defense,omitempty"`
-// 		EnabledBotDefense  map[string]interface{} `json:"bot_defense,omitempty"`
-
-// 		AdvertiseOnPublicDefaultVIP map[string]interface{} `json:"advertise_on_public_default_vip,omitempty"`
-// 		AdvertiseOnPublic           map[string]interface{} `json:"advertise_on_public,omitempty"`
-// 		AdvertiseOnCustom           map[string]interface{} `json:"advertise_on_custom,omitempty"`
-// 	} `json:"spec"`
-// }
-
 type APIResponse struct {
 	Spec struct {
 		AppFirewall struct {
 			Name string `json:"name"`
 		} `json:"app_firewall"`
+
 		DefaultRoutePools []struct {
 			Pool struct {
 				Name string `json:"name"`
 			} `json:"pool"`
 		} `json:"default_route_pools"`
+
 		ActiveServicePolicies struct {
 			Policies []struct {
 				Namespace string `json:"namespace"`
 				Name      string `json:"name"`
 			} `json:"policies"`
 		} `json:"active_service_policies"`
+
+		ServicePoliciesFromNamespace map[string]interface{} `json:"service_policies_from_namespace,omitempty"`
+
 		Routes []struct {
 			SimpleRoute *struct {
 				Path struct {
@@ -114,6 +53,7 @@ type APIResponse struct {
 					InheritedWAF *struct{} `json:"inherited_waf,omitempty"`
 				} `json:"advanced_options,omitempty"`
 			} `json:"simple_route,omitempty"`
+
 			RedirectRoute *struct {
 				Path struct {
 					Prefix string `json:"prefix"`
@@ -128,20 +68,40 @@ type APIResponse struct {
 				} `json:"route_redirect"`
 			} `json:"redirect_route,omitempty"`
 		} `json:"routes"`
-		Domains []string `json:"domains"`
 
-		APIProtection map[string]interface{} `json:"api_protection_rules,omitempty"`
-
-		DisabledBotDefense map[string]interface{} `json:"disable_bot_defense,omitempty"`
-		EnabledBotDefense  map[string]interface{} `json:"bot_defense,omitempty"`
-
+		Domains                     []string               `json:"domains"`
+		APIProtection               map[string]interface{} `json:"api_protection_rules,omitempty"`
+		DisabledBotDefense          map[string]interface{} `json:"disable_bot_defense,omitempty"`
+		EnabledBotDefense           map[string]interface{} `json:"bot_defense,omitempty"`
 		AdvertiseOnPublicDefaultVIP map[string]interface{} `json:"advertise_on_public_default_vip,omitempty"`
 		AdvertiseOnPublic           map[string]interface{} `json:"advertise_on_public,omitempty"`
 		AdvertiseOnCustom           map[string]interface{} `json:"advertise_on_custom,omitempty"`
+		CertExpirationTimestamps    []string               `json:"downstream_tls_certificate_expiration_timestamps"`
+		CertState                   string                 `json:"cert_state"`
 
-		// New Fields
-		CertExpirationTimestamps []string `json:"downstream_tls_certificate_expiration_timestamps"`
-		CertState                string   `json:"cert_state"`
+		EnableChallenge      map[string]interface{}   `json:"enable_challenge,omitempty"`
+		MoreOption           map[string]interface{}   `json:"more_option,omitempty"`
+		UserIdentification   map[string]interface{}   `json:"user_identification,omitempty"`
+		DataGuardRules       []map[string]interface{} `json:"data_guard_rules,omitempty"`
+		ClientSideDefense    map[string]interface{}   `json:"client_side_defense,omitempty"`
+		APISpecification     map[string]interface{}   `json:"api_specification,omitempty"`
+		DisableRateLimit     map[string]interface{}   `json:"disable_rate_limit,omitempty"`
+		DisableThreatMesh    map[string]interface{}   `json:"disable_threat_mesh,omitempty"`
+		DisableMalware       map[string]interface{}   `json:"disable_malware_protection,omitempty"`
+		SlowDDoS             map[string]interface{}   `json:"slow_ddos_mitigation,omitempty"`
+		L7DDoSActionDefault  map[string]interface{}   `json:"l7_ddos_action_default,omitempty"`
+		NoServicePolicies    map[string]interface{}   `json:"no_service_policies,omitempty"`
+		SourceIPStickiness   map[string]interface{}   `json:"source_ip_stickiness,omitempty"`
+		DisableTrustHeaders  map[string]interface{}   `json:"disable_trust_client_ip_headers,omitempty"`
+		EnableMaliciousUsers map[string]interface{}   `json:"enable_malicious_user_detection,omitempty"`
+		EnableAPIDiscovery   map[string]interface{}   `json:"enable_api_discovery,omitempty"`
+		DefaultSensitiveData map[string]interface{}   `json:"default_sensitive_data_policy,omitempty"`
+		GraphQLRules         []map[string]interface{} `json:"graphql_rules,omitempty"`
+		ProtectedCookies     []map[string]interface{} `json:"protected_cookies,omitempty"`
+		DNSInfo              []map[string]interface{} `json:"dns_info,omitempty"`
+		AutoCertInfo         map[string]interface{}   `json:"auto_cert_info,omitempty"`
+		InternetVIPInfo      []map[string]interface{} `json:"internet_vip_info,omitempty"`
+		State                string                   `json:"state,omitempty"`
 	} `json:"spec"`
 }
 
@@ -382,18 +342,41 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 		}
 	}
 
-	// Add Service Policies Box
-	sb.WriteString("    subgraph ServicePolicies [\"**Service Policies**\"]\n")
+	// // Add Common Security Controls Box
+	// sb.WriteString("    subgraph ServicePolicies [\"**Common Security Controls**\"]\n")
+	// sb.WriteString("        direction TB\n")
+
+	// // Determine how to render Service Policies section
+	// if len(apiResponse.Spec.ActiveServicePolicies.Policies) > 0 {
+	// 	for _, policy := range apiResponse.Spec.ActiveServicePolicies.Policies {
+	// 		sb.WriteString(fmt.Sprintf("        sp_%s[\"%s\"];\n", policy.Name, policy.Name))
+	// 	}
+	// } else if apiResponse.Spec.ServicePoliciesFromNamespace != nil {
+	// 	sb.WriteString("        sp_ns[\"Apply Namespace Service Policies\"];\n")
+	// } else {
+	// 	sb.WriteString("        sp_none[\"No Service Policies Defined\"];\n")
+	// }
+
+	// sb.WriteString("    end\n")
+
+	// Add Common Security Controls Box
+	sb.WriteString("    subgraph ServicePolicies [\"**Common Security Controls**\"]\n")
 	sb.WriteString("        direction TB\n")
 
-	// If no service policies exist, add a "No Service Policies Defined" message
-	if len(apiResponse.Spec.ActiveServicePolicies.Policies) == 0 {
-		sb.WriteString("        sp_none[\"No Service Policies Defined\"];\n")
-	} else {
-		// Add each Service Policy as a node under ServicePolicies
+	// Add Service Policies
+	if len(apiResponse.Spec.ActiveServicePolicies.Policies) > 0 {
 		for _, policy := range apiResponse.Spec.ActiveServicePolicies.Policies {
 			sb.WriteString(fmt.Sprintf("        sp_%s[\"%s\"];\n", policy.Name, policy.Name))
 		}
+	} else if apiResponse.Spec.ServicePoliciesFromNamespace != nil {
+		sb.WriteString("        sp_ns[\"Apply Namespace Service Policies\"];\n")
+	} else {
+		sb.WriteString("        sp_none[\"No Service Policies Defined\"];\n")
+	}
+
+	// Add Malicious User Detection if enabled
+	if apiResponse.Spec.EnableMaliciousUsers != nil {
+		sb.WriteString("        mud[\"Malicious User Detection\"];\n")
 	}
 
 	sb.WriteString("    end\n")
