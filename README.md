@@ -74,11 +74,9 @@ graph LR;
     pool_main-backend --> 192.168.1.10;
 ```
 
-### Example Rendering
-
-![xcshowmap Diagram](./images/mermaid-diagram.png)
-
 ### Diagram Rendering
+
+![xcshowmap example Diagram](./images/mermaid-diagram.png)
 
 To visualize the diagram, copy the Mermaid output into an online Mermaid editor like: 🔗 [Mermaid Live Editor](https://mermaid.live/)
 
