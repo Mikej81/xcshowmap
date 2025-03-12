@@ -113,9 +113,14 @@ type OriginPoolResponse struct {
 				IP          string `json:"ip"`
 				SiteLocator struct {
 					Site struct {
-						Name string `json:"name"`
+						Name      string `json:"name"`
+						Tenant    string `json:"tenant,omitempty"`
+						Namespace string `json:"namespace,omitempty"`
+						Kind      string `json:"kind,omitempty"`
 					} `json:"site"`
 				} `json:"site_locator"`
+				InsideNetwork  map[string]interface{} `json:"inside_network,omitempty"`
+				OutsideNetwork map[string]interface{} `json:"outside_network,omitempty"`
 			} `json:"private_ip,omitempty"`
 
 			PublicIP struct {
@@ -123,9 +128,54 @@ type OriginPoolResponse struct {
 			} `json:"public_ip,omitempty"`
 
 			PublicName struct {
-				DNSName string `json:"dns_name"`
+				DNSName         string `json:"dns_name"`
+				RefreshInterval int    `json:"refresh_interval,omitempty"`
 			} `json:"public_name,omitempty"`
+
+			PrivateName struct {
+				DNSName         string `json:"dns_name"`
+				RefreshInterval int    `json:"refresh_interval,omitempty"`
+				SiteLocator     struct {
+					Site struct {
+						Name      string `json:"name"`
+						Tenant    string `json:"tenant,omitempty"`
+						Namespace string `json:"namespace,omitempty"`
+						Kind      string `json:"kind,omitempty"`
+					} `json:"site"`
+				} `json:"site_locator,omitempty"`
+				InsideNetwork  map[string]interface{} `json:"inside_network,omitempty"`
+				OutsideNetwork map[string]interface{} `json:"outside_network,omitempty"`
+			} `json:"private_name,omitempty"`
+
+			K8sService struct {
+				ServiceName string `json:"service_name"`
+				SiteLocator struct {
+					Site struct {
+						Name      string `json:"name"`
+						Tenant    string `json:"tenant,omitempty"`
+						Namespace string `json:"namespace,omitempty"`
+						Kind      string `json:"kind,omitempty"`
+					} `json:"site"`
+				} `json:"site_locator,omitempty"`
+				Vk8sNetworks map[string]interface{} `json:"vk8s_networks,omitempty"`
+			} `json:"k8s_service,omitempty"`
+
+			Labels map[string]interface{} `json:"labels,omitempty"`
 		} `json:"origin_servers"`
+
+		Healthcheck []struct {
+			Tenant    string `json:"tenant"`
+			Namespace string `json:"namespace"`
+			Name      string `json:"name"`
+			Kind      string `json:"kind"`
+		} `json:"healthcheck,omitempty"`
+
+		Port               int                    `json:"port,omitempty"`
+		SameAsEndpointPort map[string]interface{} `json:"same_as_endpoint_port,omitempty"`
+		NoTLS              map[string]interface{} `json:"no_tls,omitempty"`
+		LoadBalancerAlgo   string                 `json:"loadbalancer_algorithm,omitempty"`
+		EndpointSelection  string                 `json:"endpoint_selection,omitempty"`
+		AdvancedOptions    map[string]interface{} `json:"advanced_options,omitempty"`
 	} `json:"spec"`
 }
 
@@ -214,27 +264,7 @@ func queryOriginPool(apiURL, token, namespace, poolName string, debug bool) ([]s
 		fmt.Println("---------------------------------------------------")
 	}
 
-	var response struct {
-		Spec struct {
-			OriginServers []struct {
-				PrivateIP struct {
-					IP          string `json:"ip"`
-					SiteLocator struct {
-						Site struct {
-							Name string `json:"name"`
-						} `json:"site"`
-					} `json:"site_locator,omitempty"`
-				} `json:"private_ip,omitempty"`
-				PublicIP struct {
-					IP string `json:"ip"`
-				} `json:"public_ip,omitempty"`
-				PublicName struct {
-					DNSName string `json:"dns_name"`
-				} `json:"public_name,omitempty"`
-			} `json:"origin_servers"`
-		} `json:"spec"`
-	}
-
+	var response OriginPoolResponse
 	err = json.Unmarshal(data, &response)
 	if err != nil {
 		return nil, err
@@ -244,20 +274,32 @@ func queryOriginPool(apiURL, token, namespace, poolName string, debug bool) ([]s
 	for _, server := range response.Spec.OriginServers {
 		var originLabel string
 
-		// Prefer Private IP with Site Name
-		if server.PrivateIP.IP != "" {
-			originLabel = server.PrivateIP.IP
-			if server.PrivateIP.SiteLocator.Site.Name != "" {
-				originLabel += "<br>" + server.PrivateIP.SiteLocator.Site.Name
+		switch {
+		case server.PrivateIP.IP != "":
+			originLabel = fmt.Sprintf("Private IP: %s", server.PrivateIP.IP)
+			if site := server.PrivateIP.SiteLocator.Site.Name; site != "" {
+				originLabel += "<br> Upstream Site: " + site
 			}
-		} else if server.PublicIP.IP != "" {
-			originLabel = server.PublicIP.IP
-		} else if server.PublicName.DNSName != "" {
-			originLabel = server.PublicName.DNSName
+		case server.PublicIP.IP != "":
+			originLabel = fmt.Sprintf("Public IP: %s", server.PublicIP.IP)
+		case server.PublicName.DNSName != "":
+			originLabel = fmt.Sprintf("Public DNS: %s", server.PublicName.DNSName)
+		case server.PrivateName.DNSName != "":
+			originLabel = fmt.Sprintf("Private DNS: %s", server.PrivateName.DNSName)
+			if site := server.PrivateName.SiteLocator.Site.Name; site != "" {
+				originLabel += "<br> Upstream Site: " + site
+			}
+		case server.K8sService.ServiceName != "":
+			originLabel = fmt.Sprintf("K8s Service: %s", server.K8sService.ServiceName)
+			if site := server.K8sService.SiteLocator.Site.Name; site != "" {
+				originLabel += "<br> Upstream Site: " + site
+			}
 		}
 
 		if originLabel != "" {
-			origins = append(origins, fmt.Sprintf("\"%s\"", originLabel)) // Format for Mermaid
+			// Prevent auto-linking in Mermaid by escaping periods
+			safeOrigin := strings.ReplaceAll(originLabel, ".", "#46;")
+			origins = append(origins, fmt.Sprintf("\"%s\"", safeOrigin))
 		}
 	}
 
@@ -341,23 +383,6 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 			sb.WriteString(fmt.Sprintf("    class domain_%s %s;\n", domainNodeID, certClass))
 		}
 	}
-
-	// // Add Common Security Controls Box
-	// sb.WriteString("    subgraph ServicePolicies [\"**Common Security Controls**\"]\n")
-	// sb.WriteString("        direction TB\n")
-
-	// // Determine how to render Service Policies section
-	// if len(apiResponse.Spec.ActiveServicePolicies.Policies) > 0 {
-	// 	for _, policy := range apiResponse.Spec.ActiveServicePolicies.Policies {
-	// 		sb.WriteString(fmt.Sprintf("        sp_%s[\"%s\"];\n", policy.Name, policy.Name))
-	// 	}
-	// } else if apiResponse.Spec.ServicePoliciesFromNamespace != nil {
-	// 	sb.WriteString("        sp_ns[\"Apply Namespace Service Policies\"];\n")
-	// } else {
-	// 	sb.WriteString("        sp_none[\"No Service Policies Defined\"];\n")
-	// }
-
-	// sb.WriteString("    end\n")
 
 	// Add Common Security Controls Box
 	sb.WriteString("    subgraph ServicePolicies [\"**Common Security Controls**\"]\n")
@@ -446,15 +471,15 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 		if route.SimpleRoute != nil {
 			matchConditions = append(matchConditions, "**Route**")
 			if route.SimpleRoute.Path.Prefix != "" {
-				matchConditions = append(matchConditions, fmt.Sprintf("Path: %s", route.SimpleRoute.Path.Prefix))
+				matchConditions = append(matchConditions, fmt.Sprintf("Path Match: %s", route.SimpleRoute.Path.Prefix))
 			} else if route.SimpleRoute.Path.Regex != "" {
-				matchConditions = append(matchConditions, fmt.Sprintf("Regex: %s", route.SimpleRoute.Path.Regex))
+				matchConditions = append(matchConditions, fmt.Sprintf("Path Regex: %s", route.SimpleRoute.Path.Regex))
 			}
 			for _, header := range route.SimpleRoute.Headers {
 				if header.Regex != "" {
-					matchConditions = append(matchConditions, fmt.Sprintf("Header: %s ~ %s", header.Name, header.Regex))
+					matchConditions = append(matchConditions, fmt.Sprintf("Header Regex: %s ~ %s", header.Name, header.Regex))
 				} else {
-					matchConditions = append(matchConditions, fmt.Sprintf("Header: %s", header.Name))
+					matchConditions = append(matchConditions, fmt.Sprintf("Header Match: %s", header.Name))
 				}
 			}
 			if route.SimpleRoute.AdvancedOptions != nil && route.SimpleRoute.AdvancedOptions.AppFirewall != nil {
