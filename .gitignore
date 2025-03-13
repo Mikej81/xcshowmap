@@ -29,3 +29,4 @@ example.json
 example*.json
 builder.sh
 build
+debug.log

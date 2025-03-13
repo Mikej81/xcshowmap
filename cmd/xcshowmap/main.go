@@ -76,8 +76,47 @@ type APIResponse struct {
 		AdvertiseOnPublicDefaultVIP map[string]interface{} `json:"advertise_on_public_default_vip,omitempty"`
 		AdvertiseOnPublic           map[string]interface{} `json:"advertise_on_public,omitempty"`
 		AdvertiseOnCustom           map[string]interface{} `json:"advertise_on_custom,omitempty"`
-		CertExpirationTimestamps    []string               `json:"downstream_tls_certificate_expiration_timestamps"`
-		CertState                   string                 `json:"cert_state"`
+
+		AdvertiseCustom struct {
+			AdvertiseWhere []struct {
+				Site *struct {
+					Network string `json:"network"`
+					Site    struct {
+						Tenant    string `json:"tenant"`
+						Namespace string `json:"namespace"`
+						Name      string `json:"name"`
+						Kind      string `json:"kind,omitempty"`
+					} `json:"site"`
+					IP   string `json:"ip,omitempty"`
+					IPv6 string `json:"ipv6,omitempty"`
+				} `json:"site,omitempty"`
+
+				VirtualSite *struct {
+					Network     string `json:"network"`
+					VirtualSite struct {
+						Tenant    string `json:"tenant"`
+						Namespace string `json:"namespace"`
+						Name      string `json:"name"`
+					} `json:"virtual_site"`
+				} `json:"virtual_site,omitempty"`
+
+				VirtualSiteWithVIP *struct {
+					Network     string `json:"network"`
+					VirtualSite struct {
+						Tenant    string `json:"tenant"`
+						Namespace string `json:"namespace"`
+						Name      string `json:"name"`
+					} `json:"virtual_site"`
+					IP   string `json:"ip,omitempty"`
+					IPv6 string `json:"ipv6,omitempty"`
+				} `json:"virtual_site_with_vip,omitempty"`
+
+				UseDefaultPort map[string]interface{} `json:"use_default_port,omitempty"`
+			} `json:"advertise_where,omitempty"`
+		} `json:"advertise_custom,omitempty"`
+
+		CertExpirationTimestamps []string `json:"downstream_tls_certificate_expiration_timestamps"`
+		CertState                string   `json:"cert_state"`
 
 		EnableChallenge      map[string]interface{}   `json:"enable_challenge,omitempty"`
 		MoreOption           map[string]interface{}   `json:"more_option,omitempty"`
@@ -310,9 +349,13 @@ func queryOriginPool(apiURL, token, namespace, poolName string, debug bool) ([]s
 func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace string, debug bool) {
 	// Determine Load Balancer Type
 	loadBalancerLabel := "Load Balancer"
-	if apiResponse.Spec.AdvertiseOnPublicDefaultVIP != nil || apiResponse.Spec.AdvertiseOnPublic != nil {
+
+	// Determine type
+	if apiResponse.Spec.AdvertiseOnPublicDefaultVIP != nil ||
+		apiResponse.Spec.AdvertiseOnPublic != nil ||
+		(apiResponse.Spec.AdvertiseOnPublicDefaultVIP != nil && len(apiResponse.Spec.AdvertiseOnPublicDefaultVIP) == 0) {
 		loadBalancerLabel = "Public Load Balancer"
-	} else if apiResponse.Spec.AdvertiseOnCustom != nil {
+	} else if len(apiResponse.Spec.AdvertiseOnCustom) > 0 || len(apiResponse.Spec.AdvertiseCustom.AdvertiseWhere) > 0 {
 		loadBalancerLabel = "Private Load Balancer"
 	}
 
@@ -324,7 +367,7 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	var sb strings.Builder
 	wafAdded := make(map[string]bool)
 	poolToUpstream := make(map[string]string)
-	nodeCount := 0 // Counter for unique node numbering
+	nodeCount := 0
 
 	sb.WriteString("\nMermaid Diagram:\n```mermaid\n")
 	sb.WriteString("---\n")
@@ -332,8 +375,11 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	sb.WriteString("---\n")
 	sb.WriteString("graph LR;\n")
 
-	// Start Load Balancer node
-	sb.WriteString("    User -->|SNI| LoadBalancer;\n")
+	// Load Balancer with cert info
+	sb.WriteString("    User --> LoadBalancer;\n")
+	// sb.WriteString("    LoadBalancer --> SNI;\n")
+	// sb.WriteString("    SNI[\"**SNI**\"];\n")
+
 	sb.WriteString(fmt.Sprintf("    LoadBalancer[\"**%s**\"];\n", loadBalancerLabel))
 
 	// Define Mermaid style for a green box
@@ -368,19 +414,66 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 		}
 
 		// Attach certificate details to domain node
-		// Format domain node with certificate info
 		domainNodeID := strings.ReplaceAll(domain, ".", "_")
 		domainNode := fmt.Sprintf("domain_%s[\"%s<br> Cert: %s <br> Exp: %s\"]",
 			domainNodeID, domain, certState, certExpiration)
 
-		// Connect domain to Load Balancer
-		sb.WriteString(fmt.Sprintf("    LoadBalancer --> %s;\n", domainNode))
-		// Connect domain to Service Policies
-		sb.WriteString(fmt.Sprintf("    %s --> ServicePolicies;\n", domainNode))
+		//sb.WriteString(fmt.Sprintf("    SNI --> %s;\n", domainNode))
+		sb.WriteString(fmt.Sprintf("    LoadBalancer -- SNI --> %s;\n", domainNode))
 
 		// Apply the appropriate class for styling
 		if certClass != "" {
 			sb.WriteString(fmt.Sprintf("    class domain_%s %s;\n", domainNodeID, certClass))
+		}
+	}
+
+	if loadBalancerLabel != "Private Load Balancer" {
+		for _, domain := range apiResponse.Spec.Domains {
+			domainNodeID := strings.ReplaceAll(domain, ".", "_")
+			sb.WriteString(fmt.Sprintf("    domain_%s --> ServicePolicies;\n", domainNodeID))
+		}
+	}
+
+	if loadBalancerLabel == "Private Load Balancer" && len(apiResponse.Spec.AdvertiseCustom.AdvertiseWhere) > 0 {
+		// Declare only the nodes inside the subgraph
+		sb.WriteString("    subgraph AdvertiseTargets [\"**Advertised To**\"]\n")
+		sb.WriteString("        direction TB\n")
+
+		for i, adv := range apiResponse.Spec.AdvertiseCustom.AdvertiseWhere {
+			nodeID := fmt.Sprintf("adv_target_%d", i)
+			label := ""
+
+			if adv.Site != nil {
+				label = fmt.Sprintf("Site: %s<br>Network: %s", adv.Site.Site.Name, adv.Site.Network)
+				if adv.Site.IP != "" {
+					label += fmt.Sprintf("<br>IP: %s", adv.Site.IP)
+				}
+			} else if adv.VirtualSite != nil {
+				label = fmt.Sprintf("Virtual Site: %s<br>Network: %s",
+					adv.VirtualSite.VirtualSite.Name, adv.VirtualSite.Network)
+			} else if adv.VirtualSiteWithVIP != nil {
+				label = fmt.Sprintf("Virtual Site: %s<br>Network: %s",
+					adv.VirtualSiteWithVIP.VirtualSite.Name, adv.VirtualSiteWithVIP.Network)
+				if adv.VirtualSiteWithVIP.IP != "" {
+					label += fmt.Sprintf("<br>IP: %s", adv.VirtualSiteWithVIP.IP)
+				}
+			} else {
+				label = "Unknown Advertise Target"
+			}
+
+			sb.WriteString(fmt.Sprintf("        %s[\"%s\"];\n", nodeID, label))
+		}
+
+		sb.WriteString("    end\n")
+
+		// Now do the arrows OUTSIDE the subgraph
+		for i := range apiResponse.Spec.AdvertiseCustom.AdvertiseWhere {
+			nodeID := fmt.Sprintf("adv_target_%d", i)
+			for _, domain := range apiResponse.Spec.Domains {
+				domainNodeID := strings.ReplaceAll(domain, ".", "_")
+				sb.WriteString(fmt.Sprintf("    domain_%s --> %s;\n", domainNodeID, nodeID))
+			}
+			sb.WriteString(fmt.Sprintf("    %s --> ServicePolicies;\n", nodeID))
 		}
 	}
 
