@@ -76,7 +76,79 @@ graph LR;
 
 ### Diagram Rendering
 
-![xcshowmap example Diagram](./images/mermaid-diagram.png)
+```mermaid
+---
+title: F5 Distributed Cloud Load Balancer Service Flow
+---
+graph LR;
+    User --> LoadBalancer;
+    LoadBalancer["**Public Load Balancer**"];
+    classDef certValid stroke:#01ba44,stroke-width:2px;
+    classDef certWarning stroke:#DAA520,stroke-width:2px;
+    classDef certError stroke:#B22222,stroke-width:2px;
+    LoadBalancer -- SNI --> domain_dummy-f5sa_myedgedemo_com["dummy-f5sa.myedgedemo.com<br> Cert: Valid <br> Exp: 2025-05-13T16:16:53Z"];
+    class domain_dummy-f5sa_myedgedemo_com certValid;
+    LoadBalancer -- SNI --> domain_f5-dummy_myedgedemo_com["f5-dummy.myedgedemo.com<br> Cert: Valid <br> Exp: 2025-05-13T16:16:53Z"];
+    class domain_f5-dummy_myedgedemo_com certValid;
+    domain_dummy-f5sa_myedgedemo_com --> ServicePolicies;
+    domain_f5-dummy_myedgedemo_com --> ServicePolicies;
+    subgraph ServicePolicies ["**Common Security Controls**"]
+        direction TB
+        sp_ns["Apply Namespace Service Policies"];
+        mud["Malicious User Detection"];
+    end
+    ServicePolicies --> api_protection["**API Protection Enabled**"];
+    api_protection["**API Protection Enabled**"] --> bot_defense["**Automated Fraud Enabled**"];
+    bot_defense["**Automated Fraud Enabled**"] --> waf_coleman-demo-waf["WAF: coleman-demo-waf"];
+    waf_coleman-demo-waf["WAF: coleman-demo-waf"] --> Routes;
+    Routes["**Routes**"];
+    DefaultRoute["**Default Route**"];
+    Routes --> DefaultRoute;
+    DefaultRoute --> pool_coleman-nginx-cluster-local["**Pool**<br>coleman-nginx-cluster-local"];
+    pool_coleman-nginx-cluster-local["**Pool**<br>coleman-nginx-cluster-local"] --> node_1[""Private IP: 192#46;168#46;125#46;121<br> Upstream Site: coleman-vmw-medium-0""];
+    pool_coleman-nginx-cluster-local["**Pool**<br>coleman-nginx-cluster-local"] --> node_2[""Private IP: 192#46;168#46;125#46;122<br> Upstream Site: coleman-vmw-medium-0""];
+    pool_coleman-nginx-cluster-local["**Pool**<br>coleman-nginx-cluster-local"] --> node_3[""Private IP: 192#46;168#46;125#46;123<br> Upstream Site: coleman-vmw-medium-0""];
+    route_0["**Route** <BR> Path Regex: ^/fallout-4-icon-\d+\.png$"];
+    Routes --> route_0;
+    route_0 --> pool_s3-origin["**Pool**<br>s3-origin"];
+    pool_s3-origin["**Pool**<br>s3-origin"] --> node_4[""Public DNS: coleman-test-bucket#46;s3#46;us-east-1#46;amazonaws#46;com""];
+    pool_s3-origin["**Pool**<br>s3-origin"] --> node_5[""Public IP: 8#46;8#46;8#46;8""];
+    route_3["**Route** <BR> Path Match: /en-us/"];
+    Routes --> route_3;
+    route_3 --> pool_coleman-dummy-endpoint["**Pool**<br>coleman-dummy-endpoint"];
+    pool_coleman-dummy-endpoint["**Pool**<br>coleman-dummy-endpoint"] --> node_6[""Public DNS: coleman#46;myedgedemo#46;com""];
+    route_4["**Route** <BR> Path Match: /es/"];
+    Routes --> route_4;
+    route_4 --> pool_coleman-dummy-endpoint["**Pool**<br>coleman-dummy-endpoint"];
+    route_5["**Route** <BR> Path Match: /written/"];
+    Routes --> route_5;
+    waf_drupal-waf["**WAF**: drupal-waf"];
+    route_5 --> waf_drupal-waf;
+    waf_drupal-waf --> pool_coleman-dummy-endpoint["**Pool**<br>coleman-dummy-endpoint"];
+    route_7["**Route** <BR> Path Match: / <BR> Header Regex: WWW-Authenticate ~ (.*[nN][tT][lL][mM].*)"];
+    Routes --> route_7;
+    route_7 --> pool_coleman-dummy-endpoint["**Pool**<br>coleman-dummy-endpoint"];
+    route_8["**Route** <BR> Path Regex: .*(.jpg|.png|.gif)"];
+    Routes --> route_8;
+    route_8 --> pool_coleman-dummy-endpoint["**Pool**<br>coleman-dummy-endpoint"];
+    route_9["**Route** <BR> Path Match: /login/"];
+    Routes --> route_9;
+    route_9 --> pool_coleman-dummy-endpoint["**Pool**<br>coleman-dummy-endpoint"];
+    route_11["**Route** <BR> Path Match: /chodes"];
+    Routes --> route_11;
+    route_11 --> pool_coleman-dummy-endpoint["**Pool**<br>coleman-dummy-endpoint"];
+    route_12["**Route** <BR> Path Match: /nginx"];
+    Routes --> route_12;
+    route_12 --> pool_coleman-nginx-cluster-local["**Pool**<br>coleman-nginx-cluster-local"];
+    route_13["**Route** <BR> Path Match: /multi <BR> Header Match: host"];
+    Routes --> route_13;
+    route_13 --> pool_coleman-example-multi-upstream["**Pool**<br>coleman-example-multi-upstream"];
+    pool_coleman-example-multi-upstream["**Pool**<br>coleman-example-multi-upstream"] --> node_7[""Public DNS: www#46;domain#46;com""];
+    pool_coleman-example-multi-upstream["**Pool**<br>coleman-example-multi-upstream"] --> node_8[""Public IP: 8#46;8#46;8#46;8""];
+    pool_coleman-example-multi-upstream["**Pool**<br>coleman-example-multi-upstream"] --> node_9[""Private IP: 192#46;168#46;150#46;100<br> Upstream Site: centos-27""];
+    pool_coleman-example-multi-upstream["**Pool**<br>coleman-example-multi-upstream"] --> node_10[""Private DNS: internal-app#46;domain#46;com<br> Upstream Site: cy-site-test""];
+    pool_coleman-example-multi-upstream["**Pool**<br>coleman-example-multi-upstream"] --> node_11[""K8s Service: mysql#46;default<br> Upstream Site: cy-site2""];
+```
 
 To visualize the diagram, copy the Mermaid output into an online Mermaid editor like: 🔗 [Mermaid Live Editor](https://mermaid.live/)
 
