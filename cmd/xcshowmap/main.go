@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -284,7 +284,7 @@ func queryAPI(url, token string) ([]byte, error) {
 		return nil, fmt.Errorf("API request failed with status: %s", resp.Status)
 	}
 
-	return ioutil.ReadAll(resp.Body)
+	return io.ReadAll(resp.Body)
 }
 
 // queryOriginPool fetches the upstream origins from an origin pool
