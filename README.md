@@ -8,7 +8,7 @@ Clone the repository and build the binary:
 
 ```bash
 git clone https://github.com/yourusername/xcshowmap.git
-cd xcshowmap
+cd xcshowmap/cmd/xcshowmap
 go build -o xcshowmap
 ```
 
