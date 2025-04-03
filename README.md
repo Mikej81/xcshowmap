@@ -31,7 +31,7 @@ xcshowmap -api-url <API_URL> -token <TOKEN> -namespace <NAMESPACE> -load-balance
 | `-api-url`     | Base API URL to query F5 XC                    | ✅ Yes   |
 | `-token`       | API Token for authentication                   | ✅ Yes   |
 | `-namespace`   | Namespace of the Load Balancer                 | ✅ Yes   |
-| `-load-balancer` | Load Balancer name to inspect               | ✅ Yes   |
+| `-load-balancer` | Load Balancer name to inspect or all           | ✅ Yes   |
 | `-debug`       | Prints raw JSON API responses for debugging    | ❌ No    |
 
 ## Example Usage
@@ -40,6 +40,11 @@ xcshowmap -api-url <API_URL> -token <TOKEN> -namespace <NAMESPACE> -load-balance
 
 ```bash
 xcshowmap -api-url "<https://example.api.f5.com>" -token "your_api_token" -namespace "your-namespace" -load-balancer "your-load-balancer"
+```
+
+### All Namespace LBs
+```bash
+xcshowmap -api-url "<https://example.api.f5.com>" -token "your_api_token" -namespace "your-namespace" -load-balancer "all"
 ```
 
 ### Debug Mode
