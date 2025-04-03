@@ -42,7 +42,7 @@ xcshowmap -api-url <API_URL> -token <TOKEN> -namespace <NAMESPACE> -load-balance
 xcshowmap -api-url "<https://example.api.f5.com>" -token "your_api_token" -namespace "your-namespace" -load-balancer "your-load-balancer"
 ```
 
-### All Namespace LBs
+### To list all Namespace LBs
 ```bash
 xcshowmap -api-url "<https://example.api.f5.com>" -token "your_api_token" -namespace "your-namespace" -load-balancer "all"
 ```
