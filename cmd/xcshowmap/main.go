@@ -218,6 +218,25 @@ type OriginPoolResponse struct {
 	} `json:"spec"`
 }
 
+// LoadBalancerList represents the API response structure for the list of load balancers
+type LoadBalancerList struct {
+	Items []struct {
+		Name           string            `json:"name"`
+		Tenant         string            `json:"tenant"`
+		Namespace      string            `json:"namespace"`
+		Uid            string            `json:"uid"`
+		Description    string            `json:"description"`
+		Disabled       bool              `json:"disabled"`
+		OwnerView      *string           `json:"owner_view"`
+		Metadata       *string           `json:"metadata"`
+		SystemMetadata *string           `json:"system_metadata"`
+		GetSpec        *string           `json:"get_spec"`
+		StatusSet      []interface{}     `json:"status_set"`
+		Labels         map[string]string `json:"labels"`
+		Annotations    map[string]string `json:"annotations"`
+	} `json:"items"`
+}
+
 var httpClient = &http.Client{}
 
 func main() {
@@ -235,34 +254,54 @@ func main() {
 		fmt.Println("Usage: xcshowmap -api-url <API_URL> -token <TOKEN> -namespace <NAMESPACE> -load-balancer <LB> [-debug]")
 		os.Exit(1)
 	}
-
-	// Construct API URL
-	queryURL := fmt.Sprintf("%s/api/config/namespaces/%s/http_loadbalancers/%s", *apiURL, *namespace, *loadBalancer)
-
-	// Query API
-	data, err := queryAPI(queryURL, *token)
-	if err != nil {
-		fmt.Printf("Error querying API: %v\n", err)
-		os.Exit(1)
+	var lblist []string
+	var err error
+	if *loadBalancer == "all" {
+		lblist, err = queryNSLoadBalancers(*apiURL, *token, *namespace, *debug)
+		if err != nil {
+			fmt.Printf("Error querying load balancers: %v\n", err)
+			os.Exit(1)
+		}
+		if *debug {
+			fmt.Printf("\n--- Load balancer list (Debug Mode) ---\n")
+			fmt.Printf("Debug: lblist length = %d, contents = %v\n", len(lblist), lblist)
+		}
+	} else {
+		lblist = []string{*loadBalancer}
 	}
+	// For each HTTP Load Balancer, process and create a diagram
+	fmt.Printf("Debug: lblist length = %d, contents = %v\n", len(lblist), lblist)
+	for _, lb := range lblist {
+		if *debug {
+			fmt.Printf("\n--- Getting details of load balancer '%s' (Debug Mode) ---\n", lb)
+		}
+		// Construct API URL
+		queryURL := fmt.Sprintf("%s/api/config/namespaces/%s/http_loadbalancers/%s", *apiURL, *namespace, lb)
 
-	// Debug mode: Print raw API response
-	if *debug {
-		fmt.Println("\n--- API Response (Debug Mode) ---")
-		fmt.Println(string(data))
-		fmt.Println("--------------------------------")
+		// Query API
+		data, err := queryAPI(queryURL, *token)
+		if err != nil {
+			fmt.Printf("Error querying API: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Debug mode: Print raw API response
+		if *debug {
+			fmt.Println("\n--- API Response (Debug Mode) ---")
+			fmt.Println(string(data))
+			fmt.Println("--------------------------------")
+		}
+
+		// Parse API response
+		var apiResponse APIResponse
+		if err := json.Unmarshal(data, &apiResponse); err != nil {
+			fmt.Printf("Error parsing JSON: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Generate and print Mermaid diagram
+		generateMermaidDiagram(apiResponse, *apiURL, *token, *namespace, *debug, lb)
 	}
-
-	// Parse API response
-	var apiResponse APIResponse
-	if err := json.Unmarshal(data, &apiResponse); err != nil {
-		fmt.Printf("Error parsing JSON: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Generate and print Mermaid diagram
-	generateMermaidDiagram(apiResponse, *apiURL, *token, *namespace, *debug)
-
 }
 
 // queryAPI makes a GET request and returns the response body
@@ -285,6 +324,35 @@ func queryAPI(url, token string) ([]byte, error) {
 	}
 
 	return io.ReadAll(resp.Body)
+}
+
+// queryNSLoadBalancers fetches the list of all HTTP Loadbalancers from an namespace
+func queryNSLoadBalancers(apiURL string, token string, namespace string, debug bool) ([]string, error) {
+	queryURL := fmt.Sprintf("%s/api/config/namespaces/%s/http_loadbalancers", apiURL, namespace)
+
+	data, err := queryAPI(queryURL, token)
+	if err != nil {
+		return nil, err
+	}
+
+	// Debug mode: Print raw Origin Pool API response
+	if debug {
+		fmt.Printf("\n--- Load balancer list (Debug Mode) ---\n")
+		fmt.Println(string(data))
+		fmt.Println("---------------------------------------------------")
+	}
+	var response LoadBalancerList
+	err = json.Unmarshal(data, &response)
+	if err != nil {
+		return nil, err
+	}
+
+	var httplb []string
+	for _, server := range response.Items {
+		httplb = append(httplb, server.Name)
+	}
+
+	return httplb, nil
 }
 
 // queryOriginPool fetches the upstream origins from an origin pool
@@ -346,7 +414,7 @@ func queryOriginPool(apiURL, token, namespace, poolName string, debug bool) ([]s
 }
 
 // generateMermaidDiagram outputs a Mermaid diagram from API data
-func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace string, debug bool) {
+func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace string, debug bool, loadbalancer string) {
 	// Determine Load Balancer Type
 	loadBalancerLabel := "Load Balancer"
 
@@ -371,7 +439,7 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 
 	sb.WriteString("\nMermaid Diagram:\n```mermaid\n")
 	sb.WriteString("---\n")
-	sb.WriteString("title: F5 Distributed Cloud Load Balancer Service Flow\n")
+	sb.WriteString(fmt.Sprintf("title: %s Load Balancer Service Flow\n", loadbalancer))
 	sb.WriteString("---\n")
 	sb.WriteString("graph LR;\n")
 
@@ -380,7 +448,7 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	// sb.WriteString("    LoadBalancer --> SNI;\n")
 	// sb.WriteString("    SNI[\"**SNI**\"];\n")
 
-	sb.WriteString(fmt.Sprintf("    LoadBalancer[\"**%s**\"];\n", loadBalancerLabel))
+	sb.WriteString(fmt.Sprintf("    LoadBalancer[\"**%s %s**\"];\n", loadbalancer, loadBalancerLabel))
 
 	// Define Mermaid style for a green box
 	sb.WriteString("    classDef certValid stroke:#01ba44,stroke-width:2px;\n")
