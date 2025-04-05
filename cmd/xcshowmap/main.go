@@ -111,6 +111,15 @@ type APIResponse struct {
 					IPv6 string `json:"ipv6,omitempty"`
 				} `json:"virtual_site_with_vip,omitempty"`
 
+				Vk8sService *struct {
+					Site struct {
+						Tenant    string `json:"tenant"`
+						Namespace string `json:"namespace"`
+						Name      string `json:"name"`
+						Kind      string `json:"kind,omitempty"`
+					} `json:"site"`
+				} `json:"vk8s_service,omitempty"`
+
 				UseDefaultPort map[string]interface{} `json:"use_default_port,omitempty"`
 			} `json:"advertise_where,omitempty"`
 		} `json:"advertise_custom,omitempty"`
@@ -237,6 +246,25 @@ type LoadBalancerList struct {
 	} `json:"items"`
 }
 
+// NamespaceList represents the API response structure for the list of namespaces
+type NamespaceList struct {
+	Items []struct {
+		Name           string            `json:"name"`
+		Namespace      string            `json:"namespace_list,omitempty"`
+		Tenant         string            `json:"tenant"`
+		Uid            string            `json:"uid"`
+		Labels         map[string]string `json:"labels"`
+		Annotations    map[string]string `json:"annotations"`
+		Description    string            `json:"description"`
+		Disabled       bool              `json:"disabled"`
+		OwnerView      *string           `json:"owner_view,omitempty"`
+		Metadata       *string           `json:"metadata,omitempty"`
+		SystemMetadata *string           `json:"system_metadata,omitempty"`
+		GetSpec        *string           `json:"get_spec,omitempty"`
+		StatusSet      []interface{}     `json:"status_set,omitempty"`
+	} `json:"items"`
+}
+
 var httpClient = &http.Client{}
 
 func main() {
@@ -254,53 +282,91 @@ func main() {
 		fmt.Println("Usage: xcshowmap -api-url <API_URL> -token <TOKEN> -namespace <NAMESPACE> -load-balancer <LB> [-debug]")
 		os.Exit(1)
 	}
-	var lblist []string
 	var err error
-	if *loadBalancer == "all" {
-		lblist, err = queryNSLoadBalancers(*apiURL, *token, *namespace, *debug)
+	var nslist []string
+	var lblist []string
+	if *namespace == "all" {
+		nslist, err = queryNamespaces(*apiURL, *token, *debug)
 		if err != nil {
-			fmt.Printf("Error querying load balancers: %v\n", err)
+			fmt.Printf("Error querying namespaces: %v\n", err)
 			os.Exit(1)
 		}
 		if *debug {
-			fmt.Printf("\n--- Load balancer list (Debug Mode) ---\n")
-			fmt.Printf("Debug: lblist length = %d, contents = %v\n", len(lblist), lblist)
+			fmt.Printf("\n--- Namespace list (Debug Mode) ---\n")
+			fmt.Printf("Debug: nslist length = %d, contents = %v\n", len(nslist), nslist)
 		}
 	} else {
-		lblist = []string{*loadBalancer}
+		nslist = []string{*namespace}
 	}
-	// For each HTTP Load Balancer, process and create a diagram
-	fmt.Printf("Debug: lblist length = %d, contents = %v\n", len(lblist), lblist)
-	for _, lb := range lblist {
-		if *debug {
-			fmt.Printf("\n--- Getting details of load balancer '%s' (Debug Mode) ---\n", lb)
+	// Loop through each namespace and query load balancers
+	for _, ns := range nslist {
+		if *loadBalancer == "all" {
+			lblist, err = queryNSLoadBalancers(*apiURL, *token, ns, *debug)
+			if err != nil {
+				fmt.Printf("Error querying load balancers: %v\n", err)
+				os.Exit(1)
+			}
+			if *debug {
+				fmt.Printf("\n--- Load balancer list (Debug Mode) ---\n")
+				fmt.Printf("Debug: lblist length = %d, contents = %v\n", len(lblist), lblist)
+			}
+		} else {
+			lblist = []string{*loadBalancer}
 		}
-		// Construct API URL
-		queryURL := fmt.Sprintf("%s/api/config/namespaces/%s/http_loadbalancers/%s", *apiURL, *namespace, lb)
+		// For each HTTP Load Balancer, process and create a diagram
+		for _, lb := range lblist {
+			if *debug {
+				fmt.Printf("\n--- Getting details of load balancer '%s' (Debug Mode) ---\n", lb)
+			}
+			// Construct API URL
+			queryURL := fmt.Sprintf("%s/api/config/namespaces/%s/http_loadbalancers/%s", *apiURL, ns, lb)
 
-		// Query API
-		data, err := queryAPI(queryURL, *token)
-		if err != nil {
-			fmt.Printf("Error querying API: %v\n", err)
-			os.Exit(1)
+			// Query API
+			data, err := queryAPI(queryURL, *token)
+			if err != nil {
+				fmt.Printf("Error querying API: %v\n", err)
+				os.Exit(1)
+			}
+
+			// Debug mode: Print raw API response
+			if *debug {
+				fmt.Println("\n--- API Response (Debug Mode) ---")
+				fmt.Println(string(data))
+				fmt.Println("--------------------------------")
+			}
+
+			// Parse API response
+			var apiResponse APIResponse
+			if err := json.Unmarshal(data, &apiResponse); err != nil {
+				fmt.Printf("Error parsing JSON: %v\n", err)
+				os.Exit(1)
+			}
+
+			// Generate and print Mermaid diagram
+			var mermaid strings.Builder
+			directory := fmt.Sprintf("./%s", ns)
+			if _, err := os.Stat(directory); os.IsNotExist(err) {
+				if err := os.Mkdir(directory, 0755); err != nil {
+					fmt.Printf("Error creating directory '%s': %v\n", directory, err)
+					os.Exit(1)
+				}
+			}
+			filename := fmt.Sprintf("%s/%s.mmd", directory, lb)
+
+			mermaid = generateMermaidDiagram(apiResponse, *apiURL, *token, ns, *debug, lb)
+			f, err := os.Create(filename)
+			if err != nil {
+				fmt.Printf("Error creating file '%s': %v\n", filename, err)
+				os.Exit(1)
+			}
+			if _, err := f.WriteString(mermaid.String()); err != nil {
+				fmt.Printf("Error writing to file: %v\n", err)
+				f.Close()
+				os.Exit(1)
+			}
+
+			defer f.Close()
 		}
-
-		// Debug mode: Print raw API response
-		if *debug {
-			fmt.Println("\n--- API Response (Debug Mode) ---")
-			fmt.Println(string(data))
-			fmt.Println("--------------------------------")
-		}
-
-		// Parse API response
-		var apiResponse APIResponse
-		if err := json.Unmarshal(data, &apiResponse); err != nil {
-			fmt.Printf("Error parsing JSON: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Generate and print Mermaid diagram
-		generateMermaidDiagram(apiResponse, *apiURL, *token, *namespace, *debug, lb)
 	}
 }
 
@@ -324,6 +390,35 @@ func queryAPI(url, token string) ([]byte, error) {
 	}
 
 	return io.ReadAll(resp.Body)
+}
+
+// queryNameSpaces fetches the list of all namespaces you are permissioned to
+func queryNamespaces(apiURL string, token string, debug bool) ([]string, error) {
+	queryURL := fmt.Sprintf("%s/api/web/namespaces", apiURL)
+
+	data, err := queryAPI(queryURL, token)
+	if err != nil {
+		return nil, err
+	}
+
+	// Debug mode: Print raw Origin Pool API response
+	if debug {
+		fmt.Printf("\n--- Namespace list (Debug Mode) ---\n")
+		fmt.Println(string(data))
+		fmt.Println("---------------------------------------------------")
+	}
+	var response NamespaceList
+	err = json.Unmarshal(data, &response)
+	if err != nil {
+		return nil, err
+	}
+
+	var nslist []string
+	for _, name := range response.Items {
+		nslist = append(nslist, name.Name)
+	}
+
+	return nslist, nil
 }
 
 // queryNSLoadBalancers fetches the list of all HTTP Loadbalancers from an namespace
@@ -414,7 +509,7 @@ func queryOriginPool(apiURL, token, namespace, poolName string, debug bool) ([]s
 }
 
 // generateMermaidDiagram outputs a Mermaid diagram from API data
-func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace string, debug bool, loadbalancer string) {
+func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace string, debug bool, loadbalancer string) strings.Builder {
 	// Determine Load Balancer Type
 	loadBalancerLabel := "Load Balancer"
 
@@ -428,8 +523,14 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	}
 
 	wafName := apiResponse.Spec.AppFirewall.Name
+	wafClass := "certValid" // Default to valid
 	if wafName == "" {
 		wafName = "WAF Not Configured"
+		if loadBalancerLabel == "Public Load Balancer" {
+			wafClass = "noWaf" // It is not great to have no WAF
+		} else {
+			wafClass = "certError" // Private LB without WAF is ok but quesrtionable
+		}
 	}
 
 	var sb strings.Builder
@@ -437,7 +538,8 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	poolToUpstream := make(map[string]string)
 	nodeCount := 0
 
-	sb.WriteString("\nMermaid Diagram:\n```mermaid\n")
+	//sb.WriteString("\nMermaid Diagram:\n)
+	//sb.WriteString("```mermaid\n")
 	sb.WriteString("---\n")
 	sb.WriteString(fmt.Sprintf("title: %s Load Balancer Service Flow\n", loadbalancer))
 	sb.WriteString("---\n")
@@ -454,6 +556,7 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	sb.WriteString("    classDef certValid stroke:#01ba44,stroke-width:2px;\n")
 	sb.WriteString("    classDef certWarning stroke:#DAA520,stroke-width:2px;\n")
 	sb.WriteString("    classDef certError stroke:#B22222,stroke-width:2px;\n")
+	sb.WriteString("    classDef noWaf fill:#FF5733,stroke:#B22222,stroke-width:2px;\n")
 
 	// Process Domains with Certificate Info
 	for _, domain := range apiResponse.Spec.Domains {
@@ -525,6 +628,8 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 				if adv.VirtualSiteWithVIP.IP != "" {
 					label += fmt.Sprintf("<br>IP: %s", adv.VirtualSiteWithVIP.IP)
 				}
+			} else if adv.Vk8sService != nil {
+				label = fmt.Sprintf("vK8s Service on  <br/> %s", adv.Vk8sService.Site.Name)
 			} else {
 				label = "Unknown Advertise Target"
 			}
@@ -590,7 +695,8 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	}
 
 	// Define WAF node
-	wafNode := fmt.Sprintf("waf_%s[\"WAF: %s\"]", strings.ReplaceAll(wafName, " ", "_"), wafName)
+	wafNodeID := strings.ReplaceAll(wafName, " ", "_")
+	wafNode := fmt.Sprintf("waf_%s[\"WAF: %s\"]", wafNodeID, wafName)
 
 	// Link Bot Defense → WAF
 	if botDefenseNode != "" {
@@ -600,7 +706,7 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	} else {
 		sb.WriteString(fmt.Sprintf("    ServicePolicies -->|Process WAF| %s;\n", wafNode))
 	}
-
+	sb.WriteString(fmt.Sprintf("    class waf_%s %s;\n", wafNodeID, wafClass))
 	sb.WriteString(fmt.Sprintf("    %s --> Routes;\n", wafNode))
 	sb.WriteString("    Routes[\"**Routes**\"];\n")
 
@@ -690,6 +796,7 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 		}
 	}
 
-	sb.WriteString("```\n")
-	fmt.Println(sb.String())
+	//sb.WriteString("```\n")
+	//fmt.Println(sb.String())
+	return sb
 }
