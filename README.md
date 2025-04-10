@@ -76,7 +76,7 @@ xcshowmap -api-url "<https://api.f5xc.com>" -token "my_token" -namespace "my-nam
 ### Mermaid Diagram Output
 
 ```sql
-graph LR;
+graph TB;
     User -->|SNI| LoadBalancer;
     LoadBalancer -->|dummy.myedgedemo.com| dummy.myedgedemo.com;
     dummy.myedgedemo.com --> ServicePolicies;
