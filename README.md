@@ -30,9 +30,11 @@ xcshowmap -api-url <API_URL> -token <TOKEN> -namespace <NAMESPACE> -load-balance
 |----------------|------------------------------------------------|----------|
 | `-api-url`     | Base API URL to query F5 XC                    | ✅ Yes   |
 | `-token`       | API Token for authentication                   | ✅ Yes   |
-| `-namespace`   | Namespace of the Load Balancer                 | ✅ Yes   |
+| `-namespace`   | Namespace of the Load Balancer or all          | ✅ Yes   |
 | `-load-balancer` | Load Balancer name to inspect or all           | ✅ Yes   |
 | `-debug`       | Prints raw JSON API responses for debugging    | ❌ No    |
+| `-batch`       | Save output as raw mermaid file under          | ❌ No    |
+|                | a <<namespce>>/<<loadbalancer>>.mmd structure  ||
 
 ## Example Usage
 
@@ -54,6 +56,14 @@ xcshowmap -api-url "<https://example.api.f5.com>" -token "your_api_token" -names
 ```
 
 (Debug mode prints raw API responses for troubleshooting.)
+
+### Batch Mode
+
+```bash
+xcshowmap -api-url "<https://example.api.f5.com>" -token "your_api_token" -namespace "your-namespace" -load-balancer "all" -batch
+```
+
+(Batch mode will output raw mermaid output in a folder structure across an entire namespace or an entire tenant)
 
 ### Example Output
 
@@ -157,7 +167,7 @@ graph LR;
 
 To visualize the diagram, copy the Mermaid output into an online Mermaid editor like: 🔗 [Mermaid Live Editor](https://mermaid.live/)
 
-You can also install mermaid cli and bulk convert to svg if required
+If you have used batch mode you can also install mermaid cli and bulk convert to svg.
 
 e.g.
 ```bash

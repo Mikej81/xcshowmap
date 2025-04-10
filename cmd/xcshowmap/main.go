@@ -274,6 +274,7 @@ func main() {
 	namespace := flag.String("namespace", "", "Namespace to query")
 	loadBalancer := flag.String("load-balancer", "", "Load balancer to inspect")
 	debug := flag.Bool("debug", false, "Enable debug mode to print raw API response")
+	batch := flag.Bool("batch", false, "Batch mode to process multiple load balancers")
 
 	flag.Parse()
 
@@ -353,19 +354,21 @@ func main() {
 			}
 			filename := fmt.Sprintf("%s/%s.mmd", directory, lb)
 
-			mermaid = generateMermaidDiagram(apiResponse, *apiURL, *token, ns, *debug, lb)
-			f, err := os.Create(filename)
-			if err != nil {
-				fmt.Printf("Error creating file '%s': %v\n", filename, err)
-				os.Exit(1)
-			}
-			if _, err := f.WriteString(mermaid.String()); err != nil {
-				fmt.Printf("Error writing to file: %v\n", err)
-				f.Close()
-				os.Exit(1)
-			}
+			mermaid = generateMermaidDiagram(apiResponse, *apiURL, *token, ns, *debug, lb, *batch)
+			if *batch {
+				f, err := os.Create(filename)
+				if err != nil {
+					fmt.Printf("Error creating file '%s': %v\n", filename, err)
+					os.Exit(1)
+				}
+				if _, err := f.WriteString(mermaid.String()); err != nil {
+					fmt.Printf("Error writing to file: %v\n", err)
+					f.Close()
+					os.Exit(1)
+				}
 
-			defer f.Close()
+				defer f.Close()
+			}
 		}
 	}
 }
@@ -509,7 +512,7 @@ func queryOriginPool(apiURL, token, namespace, poolName string, debug bool) ([]s
 }
 
 // generateMermaidDiagram outputs a Mermaid diagram from API data
-func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace string, debug bool, loadbalancer string) strings.Builder {
+func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace string, debug bool, loadbalancer string, batch bool) strings.Builder {
 	// Determine Load Balancer Type
 	loadBalancerLabel := "Load Balancer"
 
@@ -538,8 +541,10 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	poolToUpstream := make(map[string]string)
 	nodeCount := 0
 
-	//sb.WriteString("\nMermaid Diagram:\n)
-	//sb.WriteString("```mermaid\n")
+	if !batch {
+		sb.WriteString("\nMermaid Diagram:\n")
+		sb.WriteString("```mermaid\n")
+	}
 	sb.WriteString("---\n")
 	sb.WriteString(fmt.Sprintf("title: %s Load Balancer Service Flow\n", loadbalancer))
 	sb.WriteString("---\n")
@@ -818,9 +823,12 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 		}
 	}
 	for edge := range edges {
-		sb.WriteString(fmt.Sprintf(" class e%d animate\n", edge))
+		sb.WriteString(fmt.Sprintf("    class e%d animate\n", edge))
 	}
-	//sb.WriteString("```\n")
-	//fmt.Println(sb.String())
+	if !batch {
+		sb.WriteString("```\n")
+		fmt.Println(sb.String())
+	}
+
 	return sb
 }
