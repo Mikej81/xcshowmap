@@ -501,7 +501,7 @@ func queryOriginPool(apiURL, token, namespace, poolName string, debug bool) ([]s
 		if originLabel != "" {
 			// Prevent auto-linking in Mermaid by escaping periods
 			safeOrigin := strings.ReplaceAll(originLabel, ".", "#46;")
-			origins = append(origins, fmt.Sprintf("\"%s\"", safeOrigin))
+			origins = append(origins, safeOrigin)
 		}
 	}
 
@@ -543,7 +543,7 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	sb.WriteString("---\n")
 	sb.WriteString(fmt.Sprintf("title: %s Load Balancer Service Flow\n", loadbalancer))
 	sb.WriteString("---\n")
-	sb.WriteString("graph LR;\n")
+	sb.WriteString("graph TD;\n")
 
 	// Load Balancer with cert info
 	sb.WriteString("    User --> LoadBalancer;\n")
@@ -557,7 +557,8 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	sb.WriteString("    classDef certWarning stroke:#DAA520,stroke-width:2px;\n")
 	sb.WriteString("    classDef certError stroke:#B22222,stroke-width:2px;\n")
 	sb.WriteString("    classDef noWaf fill:#FF5733,stroke:#B22222,stroke-width:2px;\n")
-
+	sb.WriteString("    classDef animate stroke-dasharray: 9,5,stroke-dashoffset: 900,animation: dash 25s linear infinite;\n")
+	edges := 0
 	// Process Domains with Certificate Info
 	for _, domain := range apiResponse.Spec.Domains {
 		// Extract Certificate Expiration and State
@@ -590,8 +591,8 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 			domainNodeID, domain, certState, certExpiration)
 
 		//sb.WriteString(fmt.Sprintf("    SNI --> %s;\n", domainNode))
-		sb.WriteString(fmt.Sprintf("    LoadBalancer -- SNI --> %s;\n", domainNode))
-
+		sb.WriteString(fmt.Sprintf("    LoadBalancer e%d@-- SNI --> %s;\n", edges, domainNode))
+		edges++
 		// Apply the appropriate class for styling
 		if certClass != "" {
 			sb.WriteString(fmt.Sprintf("    class domain_%s %s;\n", domainNodeID, certClass))
@@ -601,14 +602,14 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	if loadBalancerLabel != "Private Load Balancer" {
 		for _, domain := range apiResponse.Spec.Domains {
 			domainNodeID := strings.ReplaceAll(domain, ".", "_")
-			sb.WriteString(fmt.Sprintf("    domain_%s --> ServicePolicies;\n", domainNodeID))
+			sb.WriteString(fmt.Sprintf("    domain_%s e%d@--> ServicePolicies;\n", domainNodeID, edges))
 		}
 	}
 
 	if loadBalancerLabel == "Private Load Balancer" && len(apiResponse.Spec.AdvertiseCustom.AdvertiseWhere) > 0 {
 		// Declare only the nodes inside the subgraph
 		sb.WriteString("    subgraph AdvertiseTargets [\"**Advertised To**\"]\n")
-		sb.WriteString("        direction TB\n")
+		sb.WriteString("        direction LR\n")
 
 		for i, adv := range apiResponse.Spec.AdvertiseCustom.AdvertiseWhere {
 			nodeID := fmt.Sprintf("adv_target_%d", i)
@@ -644,15 +645,17 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 			nodeID := fmt.Sprintf("adv_target_%d", i)
 			for _, domain := range apiResponse.Spec.Domains {
 				domainNodeID := strings.ReplaceAll(domain, ".", "_")
-				sb.WriteString(fmt.Sprintf("    domain_%s --> %s;\n", domainNodeID, nodeID))
+				sb.WriteString(fmt.Sprintf("    domain_%s e%d@--> %s;\n", domainNodeID, edges, nodeID))
+				edges++
 			}
-			sb.WriteString(fmt.Sprintf("    %s --> ServicePolicies;\n", nodeID))
+			sb.WriteString(fmt.Sprintf("    %s e%d@--> ServicePolicies;\n", nodeID, edges))
+			edges++
 		}
 	}
 
 	// Add Common Security Controls Box
 	sb.WriteString("    subgraph ServicePolicies [\"**Common Security Controls**\"]\n")
-	sb.WriteString("        direction TB\n")
+	sb.WriteString("        direction LR\n")
 
 	// Add Service Policies
 	if len(apiResponse.Spec.ActiveServicePolicies.Policies) > 0 {
@@ -676,7 +679,8 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 	apiProtectionNode := ""
 	if apiResponse.Spec.APIProtection != nil {
 		apiProtectionNode = "api_protection[\"**API Protection Enabled**\"]"
-		sb.WriteString(fmt.Sprintf("    ServicePolicies --> %s;\n", apiProtectionNode))
+		sb.WriteString(fmt.Sprintf("    ServicePolicies e%d@--> %s;\n", edges, apiProtectionNode))
+		edges++
 	}
 
 	// **Bot Defense Logic**
@@ -689,9 +693,11 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 
 	// Link API Protection → Bot Defense (if both exist)
 	if apiProtectionNode != "" && botDefenseNode != "" {
-		sb.WriteString(fmt.Sprintf("    %s --> %s;\n", apiProtectionNode, botDefenseNode))
+		sb.WriteString(fmt.Sprintf("    %s e%d@--> %s;\n", apiProtectionNode, edges, botDefenseNode))
+		edges++
 	} else if botDefenseNode != "" {
-		sb.WriteString(fmt.Sprintf("    ServicePolicies --> %s;\n", botDefenseNode))
+		sb.WriteString(fmt.Sprintf("    ServicePolicies e%d@--> %s;\n", edges, botDefenseNode))
+		edges++
 	}
 
 	// Define WAF node
@@ -700,19 +706,24 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 
 	// Link Bot Defense → WAF
 	if botDefenseNode != "" {
-		sb.WriteString(fmt.Sprintf("    %s --> %s;\n", botDefenseNode, wafNode))
+		sb.WriteString(fmt.Sprintf("    %s e%d@--> %s;\n", botDefenseNode, edges, wafNode))
+		edges++
 	} else if apiProtectionNode != "" {
-		sb.WriteString(fmt.Sprintf("    %s --> %s;\n", apiProtectionNode, wafNode))
+		sb.WriteString(fmt.Sprintf("    %se%d@ --> %s;\n", apiProtectionNode, edges, wafNode))
+		edges++
 	} else {
-		sb.WriteString(fmt.Sprintf("    ServicePolicies -->|Process WAF| %s;\n", wafNode))
+		sb.WriteString(fmt.Sprintf("    ServicePolicies e%d@-->|Process WAF| %s;\n", edges, wafNode))
+		edges++
 	}
 	sb.WriteString(fmt.Sprintf("    class waf_%s %s;\n", wafNodeID, wafClass))
-	sb.WriteString(fmt.Sprintf("    %s --> Routes;\n", wafNode))
+	sb.WriteString(fmt.Sprintf("    %s e%d@--> Routes;\n", wafNode, edges))
+	edges++
 	sb.WriteString("    Routes[\"**Routes**\"];\n")
 
 	// Add Default Route Node
 	sb.WriteString("    DefaultRoute[\"**Default Route**\"];\n")
-	sb.WriteString("    Routes --> DefaultRoute;\n")
+	sb.WriteString(fmt.Sprintf("    Routes e%d@--> DefaultRoute;\n", edges))
+	edges++
 	for _, pool := range apiResponse.Spec.DefaultRoutePools {
 		poolID := fmt.Sprintf("pool_%s[\"**Pool**<br>%s\"]", pool.Pool.Name, pool.Pool.Name)
 		sb.WriteString(fmt.Sprintf("    DefaultRoute --> %s;\n", poolID))
@@ -723,7 +734,8 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 				for _, origin := range origins {
 					nodeCount++
 					originNode := fmt.Sprintf("node_%d[\"%s\"]", nodeCount, origin)
-					sb.WriteString(fmt.Sprintf("    %s --> %s;\n", poolID, originNode))
+					sb.WriteString(fmt.Sprintf("    %s e%d@--> %s;\n", poolID, edges, originNode))
+					edges++
 				}
 				poolToUpstream[pool.Pool.Name] = origins[0]
 			}
@@ -757,7 +769,8 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 			matchLabel := strings.Join(matchConditions, " <BR> ")
 			nodeID := fmt.Sprintf("route_%d", i)
 			sb.WriteString(fmt.Sprintf("    %s[\"%s\"];\n", nodeID, matchLabel))
-			sb.WriteString(fmt.Sprintf("    Routes --> %s;\n", nodeID))
+			sb.WriteString(fmt.Sprintf("    Routes e%d@--> %s;\n", edges, nodeID))
+			edges++
 
 			// Handle WAF connections
 			if routeWAF != "" {
@@ -766,7 +779,8 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 					sb.WriteString(fmt.Sprintf("    %s[\"**WAF**: %s\"];\n", wafNodeID, routeWAF))
 					wafAdded[wafNodeID] = true
 				}
-				sb.WriteString(fmt.Sprintf("    %s --> %s;\n", nodeID, wafNodeID))
+				sb.WriteString(fmt.Sprintf("    %s e%d@--> %s;\n", nodeID, edges, wafNodeID))
+				edges++
 			}
 
 			// Process Origin Pools
@@ -775,27 +789,37 @@ func generateMermaidDiagram(apiResponse APIResponse, apiURL, token, namespace st
 				if routeWAF != "" {
 					// Ensure the WAF connects to the pool instead of the route directly
 					wafNodeID := fmt.Sprintf("waf_%s", routeWAF)
-					sb.WriteString(fmt.Sprintf("    %s --> %s;\n", wafNodeID, poolID))
+					sb.WriteString(fmt.Sprintf("    %s e%d@--> %s;\n", wafNodeID, edges, poolID))
+					edges++
 				} else {
 					// No WAF, so Route connects directly to Pool
-					sb.WriteString(fmt.Sprintf("    %s --> %s;\n", nodeID, poolID))
+					sb.WriteString(fmt.Sprintf("    %s e%d@--> %s;\n", nodeID, edges, poolID))
+					edges++
 				}
 
 				if _, exists := poolToUpstream[pool.Pool.Name]; !exists {
 					origins, err := queryOriginPool(apiURL, token, namespace, pool.Pool.Name, debug)
+					originlabel := strings.Builder{}
 					if err == nil && len(origins) > 0 {
 						for _, origin := range origins {
 							nodeCount++
-							originNode := fmt.Sprintf("node_%d[\"%s\"]", nodeCount, origin)
-							sb.WriteString(fmt.Sprintf("    %s --> %s;\n", poolID, originNode))
+							if *&debug {
+								fmt.Printf("\n--- Origin Pool %s (Debug Mode) ---\n", origin)
+							}
+							originlabel.WriteString(fmt.Sprintf("%s<br>", origin))
 						}
+						originNode := fmt.Sprintf("node_op_%s@{ shape: processes, label: \"%s\"}", pool.Pool.Name, originlabel.String())
+						sb.WriteString(fmt.Sprintf("    %s e%d@--> %s;\n", poolID, edges, originNode))
+						edges++
 						poolToUpstream[pool.Pool.Name] = origins[0]
 					}
 				}
 			}
 		}
 	}
-
+	for edge := range edges {
+		sb.WriteString(fmt.Sprintf(" class e%d animate\n", edge))
+	}
 	//sb.WriteString("```\n")
 	//fmt.Println(sb.String())
 	return sb

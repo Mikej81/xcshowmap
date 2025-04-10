@@ -157,6 +157,17 @@ graph LR;
 
 To visualize the diagram, copy the Mermaid output into an online Mermaid editor like: 🔗 [Mermaid Live Editor](https://mermaid.live/)
 
+You can also install mermaid cli and bulk convert to svg if required
+
+e.g.
+```bash
+npm install -g @mermaid-js/mermaid-cli 
+for i in $(find . -name "*.mmd" -print)
+do
+mmdc -i $i -o ${i:r}.svg 
+done
+```
+
 ### Features
 
 - Generates Service Flow from F5 XC API
