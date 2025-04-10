@@ -95,7 +95,7 @@ graph LR;
 ---
 title: F5 Distributed Cloud Load Balancer Service Flow
 ---
-graph LR;
+graph TB;
     User --> LoadBalancer;
     LoadBalancer["**Public Load Balancer**"];
     classDef certValid stroke:#01ba44,stroke-width:2px;
@@ -108,7 +108,7 @@ graph LR;
     domain_dummy-f5sa_myedgedemo_com --> ServicePolicies;
     domain_f5-dummy_myedgedemo_com --> ServicePolicies;
     subgraph ServicePolicies ["**Common Security Controls**"]
-        direction TB
+        direction LR
         sp_ns["Apply Namespace Service Policies"];
         mud["Malicious User Detection"];
     end
