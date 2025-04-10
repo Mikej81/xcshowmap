@@ -33,8 +33,8 @@ xcshowmap -api-url <API_URL> -token <TOKEN> -namespace <NAMESPACE> -load-balance
 | `-namespace`   | Namespace of the Load Balancer or all          | ✅ Yes   |
 | `-load-balancer` | Load Balancer name to inspect or all           | ✅ Yes   |
 | `-debug`       | Prints raw JSON API responses for debugging    | ❌ No    |
-| `-batch`       | Save output as raw mermaid file under          | ❌ No    |
-|                | a <<namespce>>/<<loadbalancer>>.mmd structure  ||
+| `-batch`       | Save output as raw mermaid file under <br> a *namespace*/*loadbalancer*.mmd structure        | ❌ No    |
+
 
 ## Example Usage
 
