@@ -30,3 +30,4 @@ example*.json
 builder.sh
 build
 debug.log
+.DS_Store
